@@ -103,6 +103,7 @@ function App() {
       speak(message)
     }
     const voice = getVoiceGuidance(navigation, drive.telemetry.roadName)
+    if (!voice) return
     speakOnce(voice.stage, voice.message)
   }, [drive.telemetry.isPlaying, drive.telemetry.roadName, navigation, speak])
 

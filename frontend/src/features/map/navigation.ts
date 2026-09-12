@@ -47,6 +47,7 @@ function arrowFor(maneuver: RouteManeuver): string {
 function describe(maneuver: RouteManeuver, destination: string): { full: string; short: string } {
   const road = maneuver.roadName ? ` hacia ${maneuver.roadName}` : ''
   if (maneuver.type === 'arrive') return { full: `Has llegado a ${destination}`, short: 'Llegada al destino' }
+  if (/exit roundabout|exit rotary/.test(maneuver.type)) return { full: `Sal de la rotonda${road}`, short: 'Sal de la rotonda' }
   if (/roundabout|rotary/.test(maneuver.type)) {
     const exit = ordinal(Math.max(1, maneuver.exit ?? 1))
     return { full: `En la rotonda, toma la ${exit} salida${road}`, short: `Rotonda · ${exit} salida` }
@@ -72,8 +73,9 @@ function describe(maneuver: RouteManeuver, destination: string): { full: string;
   return { full: maneuver.roadName ? `Continúa por ${maneuver.roadName}` : 'Continúa recto', short: 'Continúa recto' }
 }
 
-export function getVoiceGuidance(navigation: NavigationInstruction, currentRoad: string): VoiceGuidance {
+export function getVoiceGuidance(navigation: NavigationInstruction, currentRoad: string): VoiceGuidance | null {
   const maneuver = navigation.maneuver
+  if (maneuver && /exit roundabout|exit rotary/.test(maneuver.type)) return null
   const isRoundabout = maneuver ? /roundabout|rotary/.test(maneuver.type) : false
   const instruction = navigation.instruction.charAt(0).toLowerCase() + navigation.instruction.slice(1)
 
@@ -81,7 +83,7 @@ export function getVoiceGuidance(navigation: NavigationInstruction, currentRoad:
     if (isRoundabout && maneuver) {
       const exit = ordinal(Math.max(1, maneuver.exit ?? 1))
       const road = maneuver.roadName ? ` hacia ${maneuver.roadName}` : ''
-      return { stage: 'now', message: `Entra en la rotonda y sal por la ${exit} salida${road}` }
+      return { stage: 'now', message: `Entra en la rotonda. Sal por la ${exit} salida${road}` }
     }
     return { stage: 'now', message: `Ahora, ${instruction}` }
   }
@@ -89,8 +91,7 @@ export function getVoiceGuidance(navigation: NavigationInstruction, currentRoad:
   if (navigation.distanceM <= 115) {
     if (isRoundabout && maneuver) {
       const exit = ordinal(Math.max(1, maneuver.exit ?? 1))
-      const road = maneuver.roadName ? ` hacia ${maneuver.roadName}` : ''
-      return { stage: 'near', message: `Dentro de 100 metros, entra en la rotonda y sal por la ${exit} salida${road}` }
+      return { stage: 'near', message: `A 100 metros, rotonda. ${exit.charAt(0).toUpperCase() + exit.slice(1)} salida` }
     }
     return { stage: 'near', message: `Dentro de 100 metros, ${instruction}` }
   }

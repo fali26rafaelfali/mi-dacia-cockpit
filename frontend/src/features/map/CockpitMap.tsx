@@ -10,7 +10,7 @@ import { installOsmFurniture, loadRealOsmFurniture } from './OsmFurniture'
 import { applyMapWeather, installAdaptiveQuality, loadRealWeather } from './MapEnvironment'
 import { installManeuverPreview } from './Maneuvers3D'
 
-maplibregl.setWorkerUrl('/assets/maplibre-gl-worker.mjs')
+maplibregl.setWorkerUrl(`${import.meta.env.BASE_URL}assets/maplibre-gl-worker.mjs`)
 
 function addRouteArrow(map: MapLibreMap) {
   const canvas = document.createElement('canvas')
@@ -64,14 +64,14 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
     const markerBubble = document.createElement('div')
     markerBubble.className = 'cockpit-vehicle-pin__bubble'
     const markerCar = document.createElement('img')
-    markerCar.src = '/dacia-stepway-top.webp'
+    markerCar.src = `${import.meta.env.BASE_URL}dacia-stepway-top.webp`
     markerCar.alt = ''
     markerBubble.appendChild(markerCar)
     const markerTip = document.createElement('span')
     markerTip.className = 'cockpit-vehicle-pin__tip'
     const closeCar = document.createElement('img')
     closeCar.className = 'cockpit-vehicle-pin__close-car'
-    closeCar.src = '/dacia-stepway-rear-map.webp'
+    closeCar.src = `${import.meta.env.BASE_URL}dacia-stepway-rear-map.webp`
     closeCar.alt = ''
     markerNode.append(markerBubble, markerTip, closeCar)
     const map = new maplibregl.Map({

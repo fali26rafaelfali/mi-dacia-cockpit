@@ -2,9 +2,10 @@ import { expect, test } from '@playwright/test'
 import { FALLBACK_ROUTE } from '../../src/features/demo/constants'
 
 test('abre el cockpit y permite iniciar la demostración', async ({ page, context }) => {
+  let osrmCalls = 0
   await context.grantPermissions(['geolocation'], { origin: 'http://127.0.0.1:8000' })
   await context.setGeolocation({ longitude: -5.453, latitude: 36.1408 })
-  await page.route('https://router.project-osrm.org/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 'Ok', routes: [{ geometry: { coordinates: FALLBACK_ROUTE }, legs: [{ steps: [{ distance: 1_200, name: 'Avenida de España' }, { distance: 8_000, name: 'A-7' }] }] }] }) }))
+  await page.route('https://router.project-osrm.org/**', (route) => { osrmCalls += 1; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 'Ok', routes: [{ geometry: { coordinates: FALLBACK_ROUTE }, legs: [{ steps: [{ distance: 100, name: 'Avenida de España', maneuver: { type: 'depart', modifier: 'straight', location: FALLBACK_ROUTE[0] } }, { distance: 8_000, name: 'A-7', maneuver: { type: 'turn', modifier: 'right', location: FALLBACK_ROUTE[1] }, intersections: [{ lanes: [{ indications: ['straight'], valid: false }, { indications: ['right'], valid: true }] }] }] }] }] }) }) })
   await page.route('https://api.open-meteo.com/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ current: { temperature_2m: 21, weather_code: 1, is_day: 1 } }) }))
   await page.route('**/osm-overpass', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"elements":[]}' }))
   await page.route('**/geocode?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ display_name: 'Calle Marqués de Larios, Centro Histórico, Málaga, Andalucía, España', lat: '36.7196694', lon: '-4.4215972' }]) }))
@@ -35,6 +36,7 @@ test('abre el cockpit y permite iniciar la demostración', async ({ page, contex
   await page.getByRole('button', { name: 'Usar esta ruta' }).click()
   await expect(page.getByText('Ubicación actual → Calle Marqués de Larios', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('Avenida de España').first()).toBeVisible()
+  await expect(page.getByLabel('Carriles recomendados')).toBeVisible()
   const demo = page.getByRole('button', { name: 'Probar demo' })
   await expect(demo).toBeVisible()
   const vehicleMarker = page.locator('.cockpit-vehicle-pin')
@@ -53,14 +55,14 @@ test('abre el cockpit y permite iniciar la demostración', async ({ page, contex
   await expect(page.getByRole('heading', { name: 'Motor' })).toBeVisible()
   await expect(page.getByText('carga motor')).toBeVisible()
   await page.getByRole('button', { name: /Conectar OBD/i }).dispatchEvent('click')
-  await expect(page.getByRole('dialog', { name: 'Conectar OBD' })).toBeVisible()
-  await page.getByRole('button', { name: 'Cerrar' }).click()
+  await expect(page.getByText(/Web Bluetooth no está disponible|Bluetooth adapter not available/i)).toBeVisible()
   await page.getByRole('tab', { name: 'Viaje' }).dispatchEvent('click')
   await page.getByRole('button', { name: 'Reiniciar', exact: true }).dispatchEvent('click')
   await expect(page.getByRole('figure').first()).toHaveAttribute('aria-label', 'Velocidad: 0 km/h')
   await page.getByRole('button', { name: 'REAL GPS', exact: true }).click()
   await expect(page.getByText(/GPS REAL · ±/i)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Pausar GPS' })).toBeVisible()
+  await expect.poll(() => osrmCalls, { timeout: 8_000 }).toBeGreaterThan(2)
   await page.getByRole('tab', { name: 'Motor' }).dispatchEvent('click')
   await expect(page.getByText('GPS real · motor sin OBD')).toBeVisible()
   await expect(page.getByText('–').first()).toBeVisible()

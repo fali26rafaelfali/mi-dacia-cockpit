@@ -14,6 +14,9 @@ export interface RealDriveController extends DemoDriveController {
   accuracyM: number | null
   altitudeM: number | null
   offRoute: boolean
+  gpsCoordinate: readonly [number, number] | null
+  offRouteDurationS: number
+  offRouteSinceMs: number | null
   error: string | null
 }
 
@@ -30,6 +33,7 @@ interface RealState {
   error: string | null
   startedAt: number | null
   lastFixAt: number | null
+  offRouteSince: number | null
 }
 
 const initialState = (): RealState => ({
@@ -45,6 +49,7 @@ const initialState = (): RealState => ({
   error: null,
   startedAt: null,
   lastFixAt: null,
+  offRouteSince: null,
 })
 
 function nearestRoutePoint(points: RoutePoint[], coordinate: readonly [number, number]) {
@@ -138,6 +143,7 @@ export function useRealDrive({ route, enabled }: UseRealDriveOptions): RealDrive
       const measuredSpeed = position.coords.speed == null || position.coords.speed < 0 ? derivedSpeed : position.coords.speed * 3.6
       previousRawRef.current = { coordinate, timestamp: position.timestamp }
       const current = stateRef.current
+      const now = Date.now()
       publish({
         ...current,
         coordinate,
@@ -147,9 +153,10 @@ export function useRealDrive({ route, enabled }: UseRealDriveOptions): RealDrive
         accuracyM,
         altitudeM: position.coords.altitude,
         offRoute,
+        offRouteSince: offRoute ? current.offRouteSince ?? now : null,
         error: null,
         elapsedS: current.startedAt ? (Date.now() - current.startedAt) / 1000 : 0,
-        lastFixAt: Date.now(),
+        lastFixAt: now,
       })
     }, (error) => {
       publish({ ...stateRef.current, error: geolocationError(error), speedKph: 0 })
@@ -181,6 +188,9 @@ export function useRealDrive({ route, enabled }: UseRealDriveOptions): RealDrive
     accuracyM: status.accuracyM,
     altitudeM: status.altitudeM,
     offRoute: status.offRoute,
+    gpsCoordinate: status.coordinate,
+    offRouteDurationS: status.offRouteSince ? (Date.now() - status.offRouteSince) / 1000 : 0,
+    offRouteSinceMs: status.offRouteSince,
     error: supported ? status.error : 'Este navegador no admite ubicación GPS.',
   }
 }

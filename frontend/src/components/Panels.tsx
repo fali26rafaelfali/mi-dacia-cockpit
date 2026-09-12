@@ -1,4 +1,5 @@
 import type { DiagnosticItem, StatusItem, SystemState, TripData, VehicleAlert } from './cockpit.types'
+import type { RouteLane } from '../features/map/types'
 
 const stateLabels: Record<SystemState, string> = {
   ok: 'Correcto',
@@ -8,8 +9,8 @@ const stateLabels: Record<SystemState, string> = {
 }
 
 export interface VehicleStatusProps {
-  dataMode?: 'demo' | 'real'
-  fuelPercent: number
+  dataMode?: 'demo' | 'gps' | 'obd'
+  fuelPercent?: number
   rangeKm: number
   batteryVoltage?: number
   tirePressureBar?: number[]
@@ -24,39 +25,40 @@ export function VehicleStatus({
   dataMode = 'demo',
   fuelPercent,
   rangeKm,
-  batteryVoltage = 12.6,
+  batteryVoltage,
   tirePressureBar = [2.3, 2.3, 2.2, 2.2],
   alerts = [],
   speedKmh = 0,
-  rpm = 0,
-  coolantC = 62,
+  rpm,
+  coolantC,
   tripKm = 0,
 }: VehicleStatusProps) {
-  const fuel = Math.min(Math.max(fuelPercent, 0), 100)
-  const engineAvailable = dataMode === 'demo'
+  const fuel = fuelPercent === undefined ? 0 : Math.min(Math.max(fuelPercent, 0), 100)
+  const engineAvailable = dataMode !== 'gps'
+  const show = (number: number | undefined, unit: string, decimals = 0) => engineAvailable && number !== undefined ? `${number.toFixed(decimals)} ${unit}` : '–'
   return (
     <section className="cockpit-card cockpit-vehicle-status" aria-labelledby="vehicle-status-title">
       <div className="cockpit-card__heading">
         <div><small>Resumen</small><h2 id="vehicle-status-title">Estado del vehículo</h2></div>
         <span className={alerts.length ? 'cockpit-badge cockpit-badge--warning' : 'cockpit-badge cockpit-badge--ok'}>
-          {alerts.length ? `${alerts.length} avisos` : engineAvailable ? 'Todo correcto' : 'GPS REAL'}
+          {alerts.length ? `${alerts.length} avisos` : dataMode === 'obd' ? 'OBD REAL' : engineAvailable ? 'Todo correcto' : 'GPS REAL'}
         </span>
       </div>
       <div className="cockpit-fuel">
         <div className="cockpit-fuel__meta">
-          <span>Combustible</span><strong>{engineAvailable ? `${Math.round(fuel)}%` : '–'}</strong>
+          <span>Combustible</span><strong>{engineAvailable && fuelPercent !== undefined ? `${Math.round(fuel)}%` : '–'}</strong>
         </div>
         <div className="cockpit-progress" role="progressbar" aria-label="Nivel de combustible" aria-valuenow={fuel} aria-valuemin={0} aria-valuemax={100}>
-          <span style={{ width: `${engineAvailable ? fuel : 0}%` }} />
+          <span style={{ width: `${engineAvailable && fuelPercent !== undefined ? fuel : 0}%` }} />
         </div>
-        <p><strong>{engineAvailable ? `${rangeKm} km` : 'Conecta OBD'}</strong> {engineAvailable ? 'de autonomía estimada' : 'para leer el vehículo'}</p>
+        <p><strong>{engineAvailable && fuelPercent !== undefined ? `${rangeKm} km` : 'Sin lectura'}</strong> {engineAvailable && fuelPercent !== undefined ? 'de autonomía estimada' : 'de combustible por OBD'}</p>
       </div>
       <div className="cockpit-status-grid">
-        <div><span>Batería</span><strong>{engineAvailable ? `${batteryVoltage.toFixed(1)} V` : '–'}</strong></div>
-        <div><span>Neumáticos</span><strong>{engineAvailable ? `${Math.min(...tirePressureBar).toFixed(1)} bar` : '–'}</strong></div>
+        <div><span>Batería</span><strong>{show(batteryVoltage, 'V', 1)}</strong></div>
+        <div><span>Neumáticos</span><strong>{dataMode === 'demo' ? `${Math.min(...tirePressureBar).toFixed(1)} bar` : '–'}</strong></div>
         <div><span>Velocidad</span><strong>{Math.round(speedKmh)} km/h</strong></div>
-        <div><span>Motor</span><strong>{engineAvailable ? `${Math.round(rpm)} rpm` : '–'}</strong></div>
-        <div><span>Refrigerante</span><strong>{engineAvailable ? `${Math.round(coolantC)} °C` : '–'}</strong></div>
+        <div><span>Motor</span><strong>{show(rpm, 'rpm')}</strong></div>
+        <div><span>Refrigerante</span><strong>{show(coolantC, '°C')}</strong></div>
         <div><span>Viaje</span><strong>{tripKm.toFixed(1)} km</strong></div>
       </div>
       {alerts.length > 0 && (
@@ -82,6 +84,15 @@ export interface DriveHudProps {
   arrivalTime?: string
   remainingKm?: number
   heading?: string
+  lanes?: RouteLane[]
+}
+
+const laneArrow = (indications: string[]) => {
+  const value = indications.join(' ')
+  if (value.includes('uturn')) return '↶'
+  if (value.includes('left')) return value.includes('slight') ? '↖' : '←'
+  if (value.includes('right')) return value.includes('slight') ? '↗' : '→'
+  return '↑'
 }
 
 export function DriveHud({
@@ -94,6 +105,7 @@ export function DriveHud({
   arrivalTime = '18:42',
   remainingKm = 34,
   heading = 'NO',
+  lanes = [],
 }: DriveHudProps) {
   return (
     <section className="cockpit-drive-hud" aria-labelledby="route-title">
@@ -102,6 +114,10 @@ export function DriveHud({
         <div><small>{distanceLabel ? `En ${distanceLabel}${roadName ? ` · ${roadName}` : ''}` : `En ${distanceToTurnKm.toLocaleString('es-ES')} km`}</small><h2 id="route-title">{instruction ?? roadName}</h2></div>
         <span className="cockpit-compass">{heading}</span>
       </div>
+      {lanes.length > 0 && <div className="cockpit-lanes" aria-label="Carriles recomendados">
+        <small>CARRILES</small>
+        <div>{lanes.map((lane, index) => <span className={lane.valid ? 'is-valid' : ''} key={`${lane.indications.join('-')}-${index}`}>{laneArrow(lane.indications)}</span>)}</div>
+      </div>}
       <div className="cockpit-drive-hud__footer">
         <span><small>Destino</small><strong>{destination}</strong></span>
         <span><small>Llegada</small><strong>{arrivalTime}</strong></span>
@@ -114,7 +130,7 @@ export function DriveHud({
 export interface TripPanelProps {
   trip: TripData
   onReset?: () => void
-  dataMode?: 'demo' | 'real'
+  dataMode?: 'demo' | 'gps' | 'obd'
 }
 
 export function TripPanel({ trip, onReset, dataMode = 'demo' }: TripPanelProps) {
@@ -124,7 +140,7 @@ export function TripPanel({ trip, onReset, dataMode = 'demo' }: TripPanelProps) 
   const seconds = totalSeconds % 60
   return (
     <section className="cockpit-card cockpit-metric-panel">
-      <div className="cockpit-card__heading"><div><small>Desde la salida · {dataMode === 'demo' ? 'DEMO' : 'GPS REAL'}</small><h2>Viaje actual</h2></div>{onReset && <button className="cockpit-panel-reset" type="button" onClick={onReset}>Reiniciar</button>}</div>
+      <div className="cockpit-card__heading"><div><small>Desde la salida · {dataMode === 'demo' ? 'DEMO' : dataMode === 'obd' ? 'GPS + OBD REAL' : 'GPS REAL'}</small><h2>Viaje actual</h2></div>{onReset && <button className="cockpit-panel-reset" type="button" onClick={onReset}>Reiniciar</button>}</div>
       <div className="cockpit-metrics">
         <div><strong>{trip.distanceKm.toFixed(1)}</strong><span>km recorridos</span></div>
         <div><strong>{hours ? `${hours}h ` : ''}{minutes}m {String(seconds).padStart(2, '0')}s</strong><span>duración</span></div>
@@ -146,7 +162,7 @@ export function TripPanel({ trip, onReset, dataMode = 'demo' }: TripPanelProps) 
 }
 
 export interface EnginePanelProps {
-  dataMode?: 'demo' | 'real'
+  dataMode?: 'demo' | 'gps' | 'obd'
   coolantC?: number
   oilC?: number
   instantConsumption?: number
@@ -161,32 +177,35 @@ export interface EnginePanelProps {
   averageConsumption?: number
   runtimeSeconds?: number
   onConnect?: () => void
+  connectLabel?: string
+  obdError?: string | null
 }
 
-export function EnginePanel({ dataMode = 'demo', coolantC = 62, oilC = 58, instantConsumption = 0, ecoScore = 100, rpm = 0, speedKmh = 0, batteryVoltage = 12.6, engineLoadPercent = 0, throttlePercent = 0, intakeC = 21, fuelPercent = 72, averageConsumption = 6.2, runtimeSeconds = 0, onConnect }: EnginePanelProps) {
-  const value = (demoValue: string | number) => dataMode === 'demo' ? demoValue : '–'
+export function EnginePanel({ dataMode = 'demo', coolantC, oilC, instantConsumption, ecoScore, rpm, speedKmh = 0, batteryVoltage, engineLoadPercent, throttlePercent, intakeC, fuelPercent, averageConsumption, runtimeSeconds, onConnect, connectLabel = 'Conectar OBD para datos reales', obdError }: EnginePanelProps) {
+  const value = (number: number | undefined, suffix = '', decimals = 0) => dataMode !== 'gps' && number !== undefined ? `${number.toFixed(decimals)}${suffix}` : '–'
   return (
     <section className="cockpit-card cockpit-metric-panel">
-      <div className="cockpit-card__heading"><div><small>{dataMode === 'demo' ? 'Telemetría simulada' : 'GPS real · motor sin OBD'}</small><h2>Motor</h2></div><span className="cockpit-badge cockpit-badge--demo">{dataMode === 'demo' ? 'DEMO' : 'GPS'}</span></div>
+      <div className="cockpit-card__heading"><div><small>{dataMode === 'demo' ? 'Telemetría simulada' : dataMode === 'obd' ? 'Telemetría Bluetooth del vehículo' : 'GPS real · motor sin OBD'}</small><h2>Motor</h2></div><span className="cockpit-badge cockpit-badge--demo">{dataMode === 'demo' ? 'DEMO' : dataMode === 'obd' ? 'OBD REAL' : 'GPS'}</span></div>
       <div className="cockpit-metrics">
-        <div><strong>{value(Math.round(rpm))}</strong><span>rpm</span></div>
+        <div><strong>{value(rpm)}</strong><span>rpm</span></div>
         <div><strong>{Math.round(speedKmh)}</strong><span>km/h</span></div>
-        <div><strong>{value(`${coolantC}°`)}</strong><span>refrigerante</span></div>
-        <div><strong>{value(`${oilC}°`)}</strong><span>aceite</span></div>
-        <div><strong>{value(instantConsumption.toFixed(1))}</strong><span>l/100 km ahora</span></div>
-        <div><strong>{value(averageConsumption.toFixed(1))}</strong><span>l/100 km media</span></div>
+        <div><strong>{value(coolantC, '°')}</strong><span>refrigerante</span></div>
+        <div><strong>{value(oilC, '°')}</strong><span>aceite</span></div>
+        <div><strong>{value(instantConsumption, '', 1)}</strong><span>l/100 km ahora</span></div>
+        <div><strong>{value(averageConsumption, '', 1)}</strong><span>l/100 km media</span></div>
       </div>
       <h3 className="cockpit-panel-subtitle">Carga y alimentación</h3>
       <div className="cockpit-metrics cockpit-metrics--compact">
-        <div><strong>{value(`${Math.round(engineLoadPercent)}%`)}</strong><span>carga motor</span></div>
-        <div><strong>{value(`${Math.round(throttlePercent)}%`)}</strong><span>acelerador</span></div>
-        <div><strong>{value(`${intakeC}°`)}</strong><span>aire admisión</span></div>
-        <div><strong>{value(`${batteryVoltage.toFixed(1)} V`)}</strong><span>batería</span></div>
-        <div><strong>{value(`${Math.round(fuelPercent)}%`)}</strong><span>combustible</span></div>
-        <div><strong>{value(`${Math.floor(runtimeSeconds / 60)}m`)}</strong><span>motor activo</span></div>
+        <div><strong>{value(engineLoadPercent, '%')}</strong><span>carga motor</span></div>
+        <div><strong>{value(throttlePercent, '%')}</strong><span>acelerador</span></div>
+        <div><strong>{value(intakeC, '°')}</strong><span>aire admisión</span></div>
+        <div><strong>{value(batteryVoltage, ' V', 1)}</strong><span>batería</span></div>
+        <div><strong>{value(fuelPercent, '%')}</strong><span>combustible</span></div>
+        <div><strong>{value(runtimeSeconds === undefined ? undefined : runtimeSeconds / 60, 'm')}</strong><span>motor activo</span></div>
       </div>
-      <div className="cockpit-eco-row"><span>Puntuación eco</span><strong>{value(`${Math.round(ecoScore)}/100`)}</strong></div>
-      {onConnect && <button className="cockpit-button cockpit-button--secondary" type="button" onClick={onConnect}>Conectar OBD para datos reales</button>}
+      <div className="cockpit-eco-row"><span>Puntuación eco</span><strong>{value(ecoScore, '/100')}</strong></div>
+      {obdError && <p className="cockpit-gps-error">{obdError}</p>}
+      {onConnect && <button className="cockpit-button cockpit-button--secondary" type="button" onClick={onConnect}>{connectLabel}</button>}
     </section>
   )
 }

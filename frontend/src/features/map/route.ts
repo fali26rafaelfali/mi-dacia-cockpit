@@ -26,6 +26,7 @@ interface RoadStep {
   exit?: number
   location?: Coordinate
   bearingAfter?: number
+  lanes?: { indications: string[]; valid: boolean }[]
 }
 
 export function distanceBetween(a: Coordinate, b: Coordinate): number {
@@ -214,6 +215,7 @@ export function buildDriveRoute(
       exit: step.exit,
       roadName: step.name.trim(),
       bearingAfter: step.bearingAfter,
+      lanes: step.lanes,
     }]
   })
   const inferredManeuvers: RouteManeuver[] = []
@@ -273,10 +275,18 @@ function extractRoadSteps(payload: unknown): RoadStep[] {
       const rawExit = typeof maneuver === 'object' && maneuver !== null ? Reflect.get(maneuver, 'exit') : undefined
       const rawLocation = typeof maneuver === 'object' && maneuver !== null ? Reflect.get(maneuver, 'location') : undefined
       const rawBearing = typeof maneuver === 'object' && maneuver !== null ? Reflect.get(maneuver, 'bearing_after') : undefined
+      const intersections = Reflect.get(step, 'intersections')
+      const laneIntersection = Array.isArray(intersections) ? intersections.find((intersection) => typeof intersection === 'object' && intersection !== null && Array.isArray(Reflect.get(intersection, 'lanes'))) : undefined
+      const rawLanes = laneIntersection && typeof laneIntersection === 'object' ? Reflect.get(laneIntersection, 'lanes') : undefined
+      const lanes = Array.isArray(rawLanes) ? rawLanes.flatMap((lane) => {
+        if (typeof lane !== 'object' || lane === null) return []
+        const indications = Reflect.get(lane, 'indications')
+        return [{ indications: Array.isArray(indications) ? indications.filter((value): value is string => typeof value === 'string') : [], valid: Reflect.get(lane, 'valid') === true }]
+      }) : undefined
       return [{ distanceM, name: typeof name === 'string' ? name : '', type, modifier,
         exit: typeof rawExit === 'number' ? rawExit : undefined,
         location: isCoordinate(rawLocation) ? rawLocation : undefined,
-        bearingAfter: typeof rawBearing === 'number' ? rawBearing : undefined }]
+        bearingAfter: typeof rawBearing === 'number' ? rawBearing : undefined, lanes }]
     })
   })
 }

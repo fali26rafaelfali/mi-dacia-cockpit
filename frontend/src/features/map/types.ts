@@ -21,6 +21,12 @@ export interface RouteManeuver {
   exit?: number
   roadName: string
   bearingAfter?: number
+  lanes?: RouteLane[]
+}
+
+export interface RouteLane {
+  indications: string[]
+  valid: boolean
 }
 
 export interface DriveRoute {

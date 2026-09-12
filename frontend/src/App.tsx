@@ -12,12 +12,15 @@ import { useDemoDrive } from './features/map/useDemoDrive'
 import { useRealDrive } from './features/map/useRealDrive'
 import { getGuidancePresentation, getNavigationInstruction } from './features/map/navigation'
 import { useSpeech } from './hooks/useSpeech'
+import { useObd } from './hooks/useObd'
 import './App.css'
 
 function App() {
   const [route, setRoute] = useState(() => createFallbackRoute())
   const [routeReady, setRouteReady] = useState(false)
   const [routeLabels, setRouteLabels] = useState({ from: 'La Línea', to: 'San Roque' })
+  const [destination, setDestination] = useState<DemoLocation>({ label: 'San Roque', coordinate: SAN_ROQUE })
+  const [rerouting, setRerouting] = useState(false)
   const [routePlannerOpen, setRoutePlannerOpen] = useState(false)
   const [driveMode, setDriveMode] = useState<'demo' | 'real'>('demo')
   const demo = useDemoDrive({ route, autoPlay: false })
@@ -33,8 +36,11 @@ function App() {
   const routeRequestRef = useRef<AbortController | null>(null)
   const maxSpeedRef = useRef(0)
   const spokenManeuversRef = useRef(new Set<string>())
+  const lastRerouteRef = useRef(0)
+  const latestGpsCoordinateRef = useRef(real.gpsCoordinate)
   const [clock, setClock] = useState(() => new Date())
   const { speak } = useSpeech('es-ES')
+  const obd = useObd()
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), 30_000)
@@ -54,8 +60,9 @@ function App() {
     return () => controller.abort()
   }, [])
 
-  const speed = drive.telemetry.speedKph
-  const rpm = driveMode === 'demo' && speed ? 850 + speed * 31 : 0
+  const telemetryMode = driveMode === 'demo' ? 'demo' : obd.connected ? 'obd' : 'gps'
+  const speed = driveMode === 'real' && obd.data.speedKph !== undefined ? obd.data.speedKph : drive.telemetry.speedKph
+  const rpm = driveMode === 'demo' ? speed ? 850 + speed * 31 : 0 : obd.data.rpm ?? 0
   maxSpeedRef.current = Math.max(maxSpeedRef.current, speed)
   const remainingKm = Math.max(0, (route.distanceM - drive.telemetry.distanceM) / 1000)
   const durationMinutes = Math.max(0, Math.round(drive.telemetry.elapsedS / 60))
@@ -63,12 +70,14 @@ function App() {
   const averageKmh = drive.telemetry.elapsedS > 1 ? tripKm / (drive.telemetry.elapsedS / 3600) : 0
   const averageConsumption = 6.2
   const consumedLiters = tripKm * averageConsumption / 100
-  const fuelPercent = Math.max(0, 72 - consumedLiters / 50 * 100)
-  const coolantC = Math.round(Math.min(89, 62 + drive.telemetry.elapsedS * .18))
-  const oilC = Math.round(Math.min(94, 58 + drive.telemetry.elapsedS * .2))
-  const engineLoad = speed ? Math.min(88, 24 + speed * .48) : 0
-  const throttle = speed ? Math.min(72, 12 + speed * .34) : 0
-  const instantConsumption = speed ? 4.8 + engineLoad * .035 : 0
+  const simulatedFuelPercent = Math.max(0, 72 - consumedLiters / 50 * 100)
+  const fuelPercent = driveMode === 'demo' ? simulatedFuelPercent : obd.data.fuelPercent ?? 0
+  const coolantC = driveMode === 'demo' ? Math.round(Math.min(89, 62 + drive.telemetry.elapsedS * .18)) : obd.data.coolantC ?? 0
+  const oilC = driveMode === 'demo' ? Math.round(Math.min(94, 58 + drive.telemetry.elapsedS * .2)) : obd.data.oilC ?? 0
+  const engineLoad = driveMode === 'demo' ? speed ? Math.min(88, 24 + speed * .48) : 0 : obd.data.engineLoadPercent ?? 0
+  const throttle = driveMode === 'demo' ? speed ? Math.min(72, 12 + speed * .34) : 0 : obd.data.throttlePercent ?? 0
+  const instantConsumption = driveMode === 'demo' && speed ? 4.8 + engineLoad * .035 : 0
+  const batteryVoltage = driveMode === 'demo' ? speed ? 14.2 : 12.6 : obd.data.batteryVoltage ?? 0
   const ecoScore = Math.max(55, 100 - Math.max(0, speed - 90) * .45 - throttle * .08)
   const estimatedGear = speed < 2 ? 'N' : speed < 18 ? '1ª' : speed < 32 ? '2ª' : speed < 48 ? '3ª' : speed < 68 ? '4ª' : speed < 88 ? '5ª' : '6ª'
   const navigation = getNavigationInstruction(route, drive.telemetry.distanceM, routeLabels.to)
@@ -79,6 +88,10 @@ function App() {
   useEffect(() => {
     spokenManeuversRef.current.clear()
   }, [route])
+
+  useEffect(() => {
+    latestGpsCoordinateRef.current = real.gpsCoordinate
+  }, [real.gpsCoordinate])
 
   useEffect(() => {
     if (!drive.telemetry.isPlaying || !navigation.maneuver) return
@@ -94,9 +107,47 @@ function App() {
     else if (navigation.distanceM <= 115) speakOnce('cerca', `Dentro de 100 metros, ${instruction}`)
     else speakOnce('recto', `Continúa recto durante ${navigation.distanceLabel}${drive.telemetry.roadName ? ` por ${drive.telemetry.roadName}` : ''}`)
   }, [drive.telemetry.isPlaying, drive.telemetry.roadName, navigation.distanceLabel, navigation.distanceM, navigation.instruction, navigation.maneuver, speak])
+
+  useEffect(() => {
+    if (driveMode !== 'real' || !real.offRouteSinceMs || !real.offRoute) return
+    const reroute = () => {
+      const gpsCoordinate = latestGpsCoordinateRef.current
+      if (routeRequestRef.current || Date.now() - lastRerouteRef.current < 15_000 || !gpsCoordinate) return
+      lastRerouteRef.current = Date.now()
+      const controller = new AbortController()
+      routeRequestRef.current = controller
+      setRerouting(true)
+      setRouteReady(false)
+      void fetchDemoRoute(gpsCoordinate, destination.coordinate, controller.signal)
+        .then((nextRoute) => {
+          setRoute(nextRoute)
+          setRouteLabels({ from: 'Ubicación actual', to: destination.label })
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (routeRequestRef.current === controller) {
+            routeRequestRef.current = null
+            setRerouting(false)
+            setRouteReady(true)
+          }
+        })
+    }
+    const delayMs = Math.max(0, real.offRouteSinceMs + 4_000 - Date.now())
+    if (delayMs === 0) { reroute(); return }
+    const timer = window.setTimeout(reroute, delayMs)
+    return () => window.clearTimeout(timer)
+  }, [destination, driveMode, real.offRoute, real.offRouteSinceMs])
   const resetTrip = () => {
     maxSpeedRef.current = 0
     drive.reset()
+  }
+  const toggleObd = async () => {
+    if (obd.connected) { obd.disconnect(); return }
+    const connected = await obd.connect()
+    if (connected) {
+      setDriveMode('real')
+      setTab('engine')
+    }
   }
   const chooseDemoRoute = async (from: DemoLocation, to: DemoLocation) => {
     routeRequestRef.current?.abort()
@@ -109,6 +160,7 @@ function App() {
       const nextRoute = await fetchDemoRoute(from.coordinate, to.coordinate, controller.signal)
       if (driveMode === 'real') real.play()
       setRoute(nextRoute)
+      setDestination(to)
       setRouteLabels({ from: from.label, to: to.label })
       setRoutePlannerOpen(false)
     } finally {
@@ -224,7 +276,7 @@ function App() {
               : real.error ? 'GPS SIN CONEXIÓN' : real.hasFix ? `GPS REAL · ±${Math.round(real.accuracyM ?? 0)} M` : 'BUSCANDO GPS…'
           }</div>
           {driveMode === 'real' && real.error && <p className="cockpit-gps-error">{real.error}</p>}
-          {driveMode === 'real' && real.offRoute && <p className="cockpit-gps-warning">Fuera de la ruta calculada</p>}
+          {driveMode === 'real' && real.offRoute && <p className="cockpit-gps-warning">{rerouting ? 'Recalculando ruta…' : 'Fuera de ruta · recalculado automático'}</p>}
           <Speedometer speed={speed} speedLimit={route.points.find((point) => point.distanceM >= drive.telemetry.distanceM)?.speedLimitKph ?? 50} size={230} />
           <Tachometer rpm={rpm} size={188} />
           <button className="cockpit-route-select-button" type="button" onClick={() => setRoutePlannerOpen(true)}>↗ {routeLabels.from} → {routeLabels.to}</button>
@@ -235,16 +287,16 @@ function App() {
         </aside>
         <section className="cockpit-center-stage">
           <CockpitMap route={route} telemetry={drive.telemetry} liveTelemetry={drive.liveTelemetry} fromLabel={driveMode === 'real' ? 'Ubicación actual' : routeLabels.from} toLabel={routeLabels.to} />
-          <DriveHud instruction={guidance.instruction} distanceLabel={navigation.distanceLabel} arrow={guidance.arrow} roadName={guidance.roadName} destination={routeLabels.to} arrivalTime={arrivalTime} remainingKm={Number(remainingKm.toFixed(1))} heading={`${Math.round(drive.telemetry.bearingDeg)}°`} />
+          <DriveHud instruction={guidance.instruction} distanceLabel={navigation.distanceLabel} arrow={guidance.arrow} roadName={guidance.roadName} lanes={navigation.distanceM <= 700 ? navigation.maneuver?.lanes : undefined} destination={routeLabels.to} arrivalTime={arrivalTime} remainingKm={Number(remainingKm.toFixed(1))} heading={`${Math.round(drive.telemetry.bearingDeg)}°`} />
         </section>
         <aside className="cockpit-right-rail">
           <Tabs activeTab={tab} onChange={setTab} />
           <div className="cockpit-tab-content" id={`cockpit-panel-${tab}`} role="tabpanel" aria-labelledby={`cockpit-tab-${tab}`}>
-            {tab === 'drive' && <VehicleStatus dataMode={driveMode} fuelPercent={fuelPercent} rangeKm={Math.round(fuelPercent / 100 * 675)} batteryVoltage={speed ? 14.2 : 12.6} speedKmh={speed} rpm={rpm} coolantC={coolantC} tripKm={tripKm} />}
-            {tab === 'trip' && <TripPanel dataMode={driveMode} onReset={resetTrip} trip={{ distanceKm: tripKm, durationMinutes, durationSeconds: drive.telemetry.elapsedS, averageKmh: Math.round(averageKmh), maxSpeedKmh: maxSpeedRef.current, consumptionL100Km: driveMode === 'demo' ? averageConsumption : 0, consumedLiters: driveMode === 'demo' ? consumedLiters : 0, costEuro: driveMode === 'demo' ? consumedLiters * 1.72 : 0, gear: driveMode === 'demo' ? estimatedGear : '–', headingDeg: drive.telemetry.bearingDeg, altitudeM: driveMode === 'real' ? real.altitudeM ?? undefined : undefined, ecoScore: driveMode === 'demo' ? ecoScore : undefined }} />}
-            {tab === 'engine' && <EnginePanel dataMode={driveMode} coolantC={coolantC} oilC={oilC} instantConsumption={instantConsumption} averageConsumption={averageConsumption} ecoScore={ecoScore} rpm={rpm} speedKmh={speed} batteryVoltage={speed ? 14.2 : 12.6} engineLoadPercent={engineLoad} throttlePercent={throttle} intakeC={21} fuelPercent={fuelPercent} runtimeSeconds={drive.telemetry.elapsedS} onConnect={() => obdTool('Conectar OBD')} />}
+            {tab === 'drive' && <VehicleStatus dataMode={telemetryMode} fuelPercent={driveMode === 'demo' ? fuelPercent : obd.data.fuelPercent} rangeKm={Math.round(fuelPercent / 100 * 675)} batteryVoltage={driveMode === 'demo' ? batteryVoltage : obd.data.batteryVoltage} speedKmh={speed} rpm={driveMode === 'demo' ? rpm : obd.data.rpm} coolantC={driveMode === 'demo' ? coolantC : obd.data.coolantC} tripKm={tripKm} />}
+            {tab === 'trip' && <TripPanel dataMode={telemetryMode} onReset={resetTrip} trip={{ distanceKm: tripKm, durationMinutes, durationSeconds: drive.telemetry.elapsedS, averageKmh: Math.round(averageKmh), maxSpeedKmh: maxSpeedRef.current, consumptionL100Km: driveMode === 'demo' ? averageConsumption : 0, consumedLiters: driveMode === 'demo' ? consumedLiters : 0, costEuro: driveMode === 'demo' ? consumedLiters * 1.72 : 0, gear: driveMode === 'demo' ? estimatedGear : '–', headingDeg: drive.telemetry.bearingDeg, altitudeM: driveMode === 'real' ? real.altitudeM ?? undefined : undefined, ecoScore: driveMode === 'demo' ? ecoScore : undefined }} />}
+            {tab === 'engine' && <EnginePanel dataMode={telemetryMode} coolantC={driveMode === 'demo' ? coolantC : obd.data.coolantC} oilC={driveMode === 'demo' ? oilC : obd.data.oilC} instantConsumption={driveMode === 'demo' ? instantConsumption : undefined} averageConsumption={driveMode === 'demo' ? averageConsumption : undefined} ecoScore={driveMode === 'demo' ? ecoScore : undefined} rpm={driveMode === 'demo' ? rpm : obd.data.rpm} speedKmh={speed} batteryVoltage={driveMode === 'demo' ? batteryVoltage : obd.data.batteryVoltage} engineLoadPercent={driveMode === 'demo' ? engineLoad : obd.data.engineLoadPercent} throttlePercent={driveMode === 'demo' ? throttle : obd.data.throttlePercent} intakeC={driveMode === 'demo' ? 21 : obd.data.intakeC} fuelPercent={driveMode === 'demo' ? fuelPercent : obd.data.fuelPercent} runtimeSeconds={driveMode === 'demo' ? drive.telemetry.elapsedS : undefined} onConnect={() => { void toggleObd() }} connectLabel={obd.connecting ? 'Conectando con OBD…' : obd.connected ? `Desconectar ${obd.deviceName}` : 'Conectar OBD Bluetooth'} obdError={obd.error} />}
           </div>
-          <StatusStrip items={[{ id: 'gps', label: 'GPS', value: driveMode === 'demo' ? 'Demo' : real.hasFix ? `±${Math.round(real.accuracyM ?? 0)} m` : 'Buscando', icon: '⌖' }, { id: 'range', label: 'Autonomía', value: driveMode === 'demo' ? '486 km' : 'Sin OBD', icon: '◒' }, { id: 'outside', label: 'Exterior', value: '21 °C', icon: '☀' }]} />
+          <StatusStrip items={[{ id: 'gps', label: 'GPS', value: driveMode === 'demo' ? 'Demo' : real.hasFix ? `±${Math.round(real.accuracyM ?? 0)} m` : 'Buscando', icon: '⌖' }, { id: 'range', label: 'Autonomía', value: driveMode === 'demo' ? '486 km' : obd.connected && obd.data.fuelPercent !== undefined ? `${Math.round(obd.data.fuelPercent / 100 * 675)} km` : 'Sin dato', icon: '◒' }, { id: 'obd', label: 'OBD', value: obd.connecting ? 'Conectando' : obd.connected ? 'Conectado' : obd.supported ? 'Disponible' : 'No compatible', icon: '⌁' }]} />
           <QuickActions actions={[{ id: 'route', label: 'Ruta', icon: '↗', active: true, onClick: () => setRoutePlannerOpen(true) }, { id: 'fuel', label: 'Combustible', icon: '◒', onClick: () => setTab('drive') }, { id: 'parking', label: 'Aparcar', icon: 'P', onClick: () => undefined }, { id: 'radar', label: 'Radar', icon: '⌖', onClick: () => undefined }]} />
         </aside>
       </section>

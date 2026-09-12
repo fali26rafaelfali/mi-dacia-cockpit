@@ -1,5 +1,6 @@
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import type { DriveRoute } from './types'
+import { getNavigationInstruction } from './navigation'
 
 const emptyCollection = { type: 'FeatureCollection' as const, features: [] }
 
@@ -29,12 +30,13 @@ export function installManeuverPreview(map: MapLibreMap): void {
 }
 
 export function updateNextManeuver(map: MapLibreMap, route: DriveRoute, distanceM: number): void {
-  const next = route.points.find((point) => point.distanceM > distanceM + 35 && point.distanceM < distanceM + 420 && point.curvature >= .045)
+  const navigation = getNavigationInstruction(route, distanceM, 'destino')
+  const next = navigation.maneuver && navigation.distanceM <= 700 ? navigation.maneuver : null
   const features = next ? [{
     type: 'Feature' as const,
     properties: {
-      bearing: next.bearingDeg,
-      label: `PRÓXIMO GIRO · ${Math.max(40, Math.round((next.distanceM - distanceM) / 10) * 10)} m`,
+      bearing: next.bearingAfter ?? route.points.find((point) => point.distanceM >= next.distanceM)?.bearingDeg ?? 0,
+      label: `${navigation.shortInstruction.toUpperCase()} · ${navigation.distanceLabel}`,
     },
     geometry: { type: 'Point' as const, coordinates: [...next.coordinate] },
   }] : []

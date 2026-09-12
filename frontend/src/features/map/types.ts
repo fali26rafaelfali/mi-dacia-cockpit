@@ -13,8 +13,19 @@ export interface RoutePoint {
   roadName: string
 }
 
+export interface RouteManeuver {
+  distanceM: number
+  coordinate: Coordinate
+  type: string
+  modifier: string
+  exit?: number
+  roadName: string
+  bearingAfter?: number
+}
+
 export interface DriveRoute {
   points: RoutePoint[]
+  maneuvers: RouteManeuver[]
   distanceM: number
   durationS: number
   source: 'osrm' | 'fallback'

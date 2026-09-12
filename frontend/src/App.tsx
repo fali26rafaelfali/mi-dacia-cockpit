@@ -10,6 +10,8 @@ import { LA_LINEA, SAN_ROQUE } from './features/demo/constants'
 import { createFallbackRoute, fetchDemoRoute } from './features/map/route'
 import { useDemoDrive } from './features/map/useDemoDrive'
 import { useRealDrive } from './features/map/useRealDrive'
+import { getNavigationInstruction } from './features/map/navigation'
+import { useSpeech } from './hooks/useSpeech'
 import './App.css'
 
 function App() {
@@ -30,7 +32,9 @@ function App() {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null)
   const routeRequestRef = useRef<AbortController | null>(null)
   const maxSpeedRef = useRef(0)
+  const spokenManeuversRef = useRef(new Set<string>())
   const [clock, setClock] = useState(() => new Date())
+  const { speak } = useSpeech('es-ES')
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), 30_000)
@@ -67,6 +71,28 @@ function App() {
   const instantConsumption = speed ? 4.8 + engineLoad * .035 : 0
   const ecoScore = Math.max(55, 100 - Math.max(0, speed - 90) * .45 - throttle * .08)
   const estimatedGear = speed < 2 ? 'N' : speed < 18 ? '1ª' : speed < 32 ? '2ª' : speed < 48 ? '3ª' : speed < 68 ? '4ª' : speed < 88 ? '5ª' : '6ª'
+  const navigation = getNavigationInstruction(route, drive.telemetry.distanceM, routeLabels.to)
+  const remainingSeconds = route.durationS * remainingKm * 1000 / Math.max(1, route.distanceM)
+  const arrivalTime = new Date(clock.getTime() + remainingSeconds * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+
+  useEffect(() => {
+    spokenManeuversRef.current.clear()
+  }, [route])
+
+  useEffect(() => {
+    if (!drive.telemetry.isPlaying || !navigation.maneuver) return
+    const maneuverId = `${Math.round(navigation.maneuver.distanceM)}-${navigation.maneuver.type}`
+    const speakOnce = (stage: string, message: string) => {
+      const key = `${maneuverId}-${stage}`
+      if (spokenManeuversRef.current.has(key)) return
+      spokenManeuversRef.current.add(key)
+      speak(message)
+    }
+    const instruction = navigation.instruction.charAt(0).toLowerCase() + navigation.instruction.slice(1)
+    if (navigation.distanceM <= 25) speakOnce('ahora', `Ahora, ${instruction}`)
+    else if (navigation.distanceM <= 120) speakOnce('cerca', `Dentro de 100 metros, ${instruction}`)
+    else if (navigation.distanceM <= 520) speakOnce('aviso', `Dentro de 500 metros, ${instruction}`)
+  }, [drive.telemetry.isPlaying, navigation.distanceM, navigation.instruction, navigation.maneuver, speak])
   const resetTrip = () => {
     maxSpeedRef.current = 0
     drive.reset()
@@ -208,7 +234,7 @@ function App() {
         </aside>
         <section className="cockpit-center-stage">
           <CockpitMap route={route} telemetry={drive.telemetry} liveTelemetry={drive.liveTelemetry} fromLabel={driveMode === 'real' ? 'Ubicación actual' : routeLabels.from} toLabel={routeLabels.to} />
-          <DriveHud roadName={drive.telemetry.roadName || (drive.telemetry.roadClass === 'motorway' ? 'Autovía' : `Dirección ${routeLabels.to}`)} destination={routeLabels.to} remainingKm={Number(remainingKm.toFixed(1))} distanceToTurnKm={Math.min(1.2, Number(remainingKm.toFixed(1)))} heading={`${Math.round(drive.telemetry.bearingDeg)}°`} />
+          <DriveHud instruction={navigation.instruction} distanceLabel={navigation.distanceLabel} arrow={navigation.arrow} roadName={navigation.maneuver?.roadName || drive.telemetry.roadName} destination={routeLabels.to} arrivalTime={arrivalTime} remainingKm={Number(remainingKm.toFixed(1))} heading={`${Math.round(drive.telemetry.bearingDeg)}°`} />
         </section>
         <aside className="cockpit-right-rail">
           <Tabs activeTab={tab} onChange={setTab} />

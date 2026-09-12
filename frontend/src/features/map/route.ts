@@ -6,6 +6,7 @@ import type {
   Coordinate,
   DriveRoute,
   RoadClass,
+  RouteManeuver,
   RoutePoint,
 } from './types'
 
@@ -20,6 +21,11 @@ const clamp = (value: number, minimum: number, maximum: number) =>
 interface RoadStep {
   distanceM: number
   name: string
+  type: string
+  modifier: string
+  exit?: number
+  location?: Coordinate
+  bearingAfter?: number
 }
 
 export function distanceBetween(a: Coordinate, b: Coordinate): number {
@@ -194,7 +200,34 @@ export function buildDriveRoute(
       Math.max(2, (points[index].targetSpeedKph + points[index - 1].targetSpeedKph) / 7.2)
     durationS += gap / averageMps
   }
-  return { points, distanceM: totalDistance, durationS, source }
+  let stepCursor = 0
+  const parsedManeuvers: RouteManeuver[] = roadSteps.flatMap((step) => {
+    const distanceM = stepCursor * totalDistance / Math.max(1, stepsDistance)
+    stepCursor += Math.max(0, step.distanceM)
+    if (step.type === 'depart') return []
+    const routePoint = points.reduce((closest, point) => Math.abs(point.distanceM - distanceM) < Math.abs(closest.distanceM - distanceM) ? point : closest, points[0])
+    return [{
+      distanceM: step.type === 'arrive' ? totalDistance : distanceM,
+      coordinate: step.location ?? routePoint.coordinate,
+      type: step.type,
+      modifier: step.modifier,
+      exit: step.exit,
+      roadName: step.name.trim(),
+      bearingAfter: step.bearingAfter,
+    }]
+  })
+  const inferredManeuvers: RouteManeuver[] = []
+  if (!parsedManeuvers.length) {
+    for (let index = 2; index < points.length - 2; index += 1) {
+      const point = points[index]
+      const previous = inferredManeuvers[inferredManeuvers.length - 1]
+      if (point.curvature < .055 || (previous && point.distanceM - previous.distanceM < 280)) continue
+      const turn = shortestAngle(points[index - 2].bearingDeg, points[index + 2].bearingDeg)
+      inferredManeuvers.push({ distanceM: point.distanceM, coordinate: point.coordinate, type: 'turn', modifier: turn < 0 ? 'left' : 'right', roadName: point.roadName, bearingAfter: point.bearingDeg })
+    }
+    inferredManeuvers.push({ distanceM: totalDistance, coordinate: points[points.length - 1].coordinate, type: 'arrive', modifier: 'straight', roadName: '' })
+  }
+  return { points, maneuvers: parsedManeuvers.length ? parsedManeuvers : inferredManeuvers, distanceM: totalDistance, durationS, source }
 }
 
 function isCoordinate(value: unknown): value is [number, number] {
@@ -233,8 +266,17 @@ function extractRoadSteps(payload: unknown): RoadStep[] {
       if (typeof step !== 'object' || step === null) return []
       const distanceM = Reflect.get(step, 'distance')
       const name = Reflect.get(step, 'name')
+      const maneuver = Reflect.get(step, 'maneuver')
       if (typeof distanceM !== 'number' || !Number.isFinite(distanceM)) return []
-      return [{ distanceM, name: typeof name === 'string' ? name : '' }]
+      const type = typeof maneuver === 'object' && maneuver !== null && typeof Reflect.get(maneuver, 'type') === 'string' ? String(Reflect.get(maneuver, 'type')) : 'continue'
+      const modifier = typeof maneuver === 'object' && maneuver !== null && typeof Reflect.get(maneuver, 'modifier') === 'string' ? String(Reflect.get(maneuver, 'modifier')) : 'straight'
+      const rawExit = typeof maneuver === 'object' && maneuver !== null ? Reflect.get(maneuver, 'exit') : undefined
+      const rawLocation = typeof maneuver === 'object' && maneuver !== null ? Reflect.get(maneuver, 'location') : undefined
+      const rawBearing = typeof maneuver === 'object' && maneuver !== null ? Reflect.get(maneuver, 'bearing_after') : undefined
+      return [{ distanceM, name: typeof name === 'string' ? name : '', type, modifier,
+        exit: typeof rawExit === 'number' ? rawExit : undefined,
+        location: isCoordinate(rawLocation) ? rawLocation : undefined,
+        bearingAfter: typeof rawBearing === 'number' ? rawBearing : undefined }]
     })
   })
 }

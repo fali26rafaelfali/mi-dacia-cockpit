@@ -74,6 +74,9 @@ export function VehicleStatus({
 
 export interface DriveHudProps {
   roadName?: string
+  instruction?: string
+  distanceLabel?: string
+  arrow?: string
   destination?: string
   distanceToTurnKm?: number
   arrivalTime?: string
@@ -83,6 +86,9 @@ export interface DriveHudProps {
 
 export function DriveHud({
   roadName = 'A-6 · Autovía del Noroeste',
+  instruction,
+  distanceLabel,
+  arrow = '↗',
   destination = 'Destino',
   distanceToTurnKm = 1.2,
   arrivalTime = '18:42',
@@ -92,8 +98,8 @@ export function DriveHud({
   return (
     <section className="cockpit-drive-hud" aria-labelledby="route-title">
       <div className="cockpit-drive-hud__route">
-        <span className="cockpit-route-arrow" aria-hidden="true">↗</span>
-        <div><small>En {distanceToTurnKm.toLocaleString('es-ES')} km</small><h2 id="route-title">{roadName}</h2></div>
+        <span className="cockpit-route-arrow" aria-hidden="true">{arrow}</span>
+        <div><small>{distanceLabel ? `En ${distanceLabel}${roadName ? ` · ${roadName}` : ''}` : `En ${distanceToTurnKm.toLocaleString('es-ES')} km`}</small><h2 id="route-title">{instruction ?? roadName}</h2></div>
         <span className="cockpit-compass">{heading}</span>
       </div>
       <div className="cockpit-drive-hud__footer">

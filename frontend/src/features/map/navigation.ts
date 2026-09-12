@@ -9,6 +9,13 @@ export interface NavigationInstruction {
   arrow: string
 }
 
+export interface GuidancePresentation {
+  instruction: string
+  roadName: string
+  arrow: string
+  approachingTurn: boolean
+}
+
 const ordinal = (exit: number) => {
   const names = ['', 'primera', 'segunda', 'tercera', 'cuarta', 'quinta', 'sexta']
   return names[exit] ?? `${exit}.ª`
@@ -62,4 +69,23 @@ export function getNavigationInstruction(route: DriveRoute, distanceM: number, d
   const remaining = Math.max(0, maneuver.distanceM - distanceM)
   const description = describe(maneuver, destination)
   return { maneuver, distanceM: remaining, distanceLabel: formatNavigationDistance(remaining), instruction: description.full, shortInstruction: description.short, arrow: arrowFor(maneuver) }
+}
+
+export function getGuidancePresentation(navigation: NavigationInstruction, currentRoad: string, destination: string): GuidancePresentation {
+  const approachingTurn = navigation.distanceM <= 115
+  if (approachingTurn || !navigation.maneuver) {
+    return {
+      instruction: navigation.instruction,
+      roadName: navigation.maneuver?.roadName ?? currentRoad,
+      arrow: navigation.arrow,
+      approachingTurn,
+    }
+  }
+  const road = currentRoad || `dirección ${destination}`
+  return {
+    instruction: `Continúa recto por ${road}`,
+    roadName: road,
+    arrow: '↑',
+    approachingTurn: false,
+  }
 }

@@ -31,7 +31,7 @@ export function installManeuverPreview(map: MapLibreMap): void {
 
 export function updateNextManeuver(map: MapLibreMap, route: DriveRoute, distanceM: number): void {
   const navigation = getNavigationInstruction(route, distanceM, 'destino')
-  const next = navigation.maneuver && navigation.distanceM <= 700 ? navigation.maneuver : null
+  const next = navigation.maneuver && navigation.distanceM <= 150 ? navigation.maneuver : null
   const features = next ? [{
     type: 'Feature' as const,
     properties: {

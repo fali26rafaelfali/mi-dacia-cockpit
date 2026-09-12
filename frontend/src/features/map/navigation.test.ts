@@ -15,8 +15,9 @@ test('describe una rotonda con número de salida y distancia profesional', () =>
 })
 
 test('formatea metros y kilómetros para lectura rápida', () => {
-  expect(formatNavigationDistance(497)).toBe('500 m')
-  expect(formatNavigationDistance(1_240)).toBe('1,2 km')
+  expect(formatNavigationDistance(497)).toBe('500 metros')
+  expect(formatNavigationDistance(1_000)).toBe('1 kilómetro')
+  expect(formatNavigationDistance(1_240)).toBe('1,2 kilómetros')
 })
 
 test('mantiene recto cuando el giro está lejos y muestra el giro a 100 metros', () => {

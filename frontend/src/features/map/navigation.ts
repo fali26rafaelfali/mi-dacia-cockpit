@@ -22,8 +22,12 @@ const ordinal = (exit: number) => {
 }
 
 export function formatNavigationDistance(distanceM: number): string {
-  if (distanceM < 950) return `${Math.max(10, Math.round(distanceM / 10) * 10)} m`
-  return `${(distanceM / 1000).toLocaleString('es-ES', { maximumFractionDigits: 1 })} km`
+  if (distanceM < 950) {
+    const meters = Math.max(10, Math.round(distanceM / 10) * 10)
+    return `${meters} ${meters === 1 ? 'metro' : 'metros'}`
+  }
+  const kilometers = Number((distanceM / 1000).toFixed(1))
+  return `${kilometers.toLocaleString('es-ES', { maximumFractionDigits: 1 })} ${kilometers === 1 ? 'kilómetro' : 'kilómetros'}`
 }
 
 function arrowFor(maneuver: RouteManeuver): string {

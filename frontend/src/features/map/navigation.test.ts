@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { buildDriveRoute } from './route'
-import { formatNavigationDistance, getGuidancePresentation, getNavigationInstruction } from './navigation'
+import { formatNavigationDistance, getGuidancePresentation, getNavigationInstruction, getVoiceGuidance } from './navigation'
 
 test('describe una rotonda con número de salida y distancia profesional', () => {
   const route = buildDriveRoute([[-5.45, 36.14], [-5.44, 36.145], [-5.43, 36.15]], 'osrm', [
@@ -12,6 +12,25 @@ test('describe una rotonda con número de salida y distancia profesional', () =>
   expect(navigation.instruction).toBe('En la rotonda, toma la segunda salida hacia A-7')
   expect(navigation.arrow).toBe('⟳')
   expect(navigation.distanceM).toBeGreaterThan(500)
+})
+
+test('da una instrucción de voz precisa antes y al entrar en una rotonda', () => {
+  const route = buildDriveRoute([[-5.45, 36.14], [-5.44, 36.145], [-5.43, 36.15]], 'osrm', [
+    { distanceM: 300, name: 'Avenida de España', type: 'depart', modifier: 'straight' },
+    { distanceM: 200, name: 'A-7', type: 'roundabout', modifier: 'right', exit: 2 },
+  ])
+  const first = getNavigationInstruction(route, 0, 'San Roque')
+  const near = getNavigationInstruction(route, first.maneuver!.distanceM - 100, 'San Roque')
+  const now = getNavigationInstruction(route, first.maneuver!.distanceM - 20, 'San Roque')
+
+  expect(getVoiceGuidance(near, 'Avenida de España')).toEqual({
+    stage: 'near',
+    message: 'Dentro de 100 metros, entra en la rotonda y sal por la segunda salida hacia A-7',
+  })
+  expect(getVoiceGuidance(now, 'Avenida de España')).toEqual({
+    stage: 'now',
+    message: 'Entra en la rotonda y sal por la segunda salida hacia A-7',
+  })
 })
 
 test('formatea metros y kilómetros para lectura rápida', () => {

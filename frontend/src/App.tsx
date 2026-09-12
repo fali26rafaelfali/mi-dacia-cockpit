@@ -10,7 +10,7 @@ import { LA_LINEA, SAN_ROQUE } from './features/demo/constants'
 import { createFallbackRoute, fetchDemoRoute } from './features/map/route'
 import { useDemoDrive } from './features/map/useDemoDrive'
 import { useRealDrive } from './features/map/useRealDrive'
-import { getGuidancePresentation, getNavigationInstruction } from './features/map/navigation'
+import { getGuidancePresentation, getNavigationInstruction, getVoiceGuidance } from './features/map/navigation'
 import { useSpeech } from './hooks/useSpeech'
 import { useObd } from './hooks/useObd'
 import './App.css'
@@ -102,11 +102,9 @@ function App() {
       spokenManeuversRef.current.add(key)
       speak(message)
     }
-    const instruction = navigation.instruction.charAt(0).toLowerCase() + navigation.instruction.slice(1)
-    if (navigation.distanceM <= 25) speakOnce('ahora', `Ahora, ${instruction}`)
-    else if (navigation.distanceM <= 115) speakOnce('cerca', `Dentro de 100 metros, ${instruction}`)
-    else speakOnce('recto', `Continúa recto durante ${navigation.distanceLabel}${drive.telemetry.roadName ? ` por ${drive.telemetry.roadName}` : ''}`)
-  }, [drive.telemetry.isPlaying, drive.telemetry.roadName, navigation.distanceLabel, navigation.distanceM, navigation.instruction, navigation.maneuver, speak])
+    const voice = getVoiceGuidance(navigation, drive.telemetry.roadName)
+    speakOnce(voice.stage, voice.message)
+  }, [drive.telemetry.isPlaying, drive.telemetry.roadName, navigation, speak])
 
   useEffect(() => {
     if (driveMode !== 'real' || !real.offRouteSinceMs || !real.offRoute) return

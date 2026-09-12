@@ -16,6 +16,11 @@ export interface GuidancePresentation {
   approachingTurn: boolean
 }
 
+export interface VoiceGuidance {
+  stage: 'far' | 'near' | 'now'
+  message: string
+}
+
 const ordinal = (exit: number) => {
   const names = ['', 'primera', 'segunda', 'tercera', 'cuarta', 'quinta', 'sexta']
   return names[exit] ?? `${exit}.ª`
@@ -65,6 +70,35 @@ function describe(maneuver: RouteManeuver, destination: string): { full: string;
     return { full: `${action}${road}`, short: action }
   }
   return { full: maneuver.roadName ? `Continúa por ${maneuver.roadName}` : 'Continúa recto', short: 'Continúa recto' }
+}
+
+export function getVoiceGuidance(navigation: NavigationInstruction, currentRoad: string): VoiceGuidance {
+  const maneuver = navigation.maneuver
+  const isRoundabout = maneuver ? /roundabout|rotary/.test(maneuver.type) : false
+  const instruction = navigation.instruction.charAt(0).toLowerCase() + navigation.instruction.slice(1)
+
+  if (navigation.distanceM <= 25) {
+    if (isRoundabout && maneuver) {
+      const exit = ordinal(Math.max(1, maneuver.exit ?? 1))
+      const road = maneuver.roadName ? ` hacia ${maneuver.roadName}` : ''
+      return { stage: 'now', message: `Entra en la rotonda y sal por la ${exit} salida${road}` }
+    }
+    return { stage: 'now', message: `Ahora, ${instruction}` }
+  }
+
+  if (navigation.distanceM <= 115) {
+    if (isRoundabout && maneuver) {
+      const exit = ordinal(Math.max(1, maneuver.exit ?? 1))
+      const road = maneuver.roadName ? ` hacia ${maneuver.roadName}` : ''
+      return { stage: 'near', message: `Dentro de 100 metros, entra en la rotonda y sal por la ${exit} salida${road}` }
+    }
+    return { stage: 'near', message: `Dentro de 100 metros, ${instruction}` }
+  }
+
+  return {
+    stage: 'far',
+    message: `Continúa recto durante ${navigation.distanceLabel}${currentRoad ? ` por ${currentRoad}` : ''}`,
+  }
 }
 
 export function getNavigationInstruction(route: DriveRoute, distanceM: number, destination: string): NavigationInstruction {

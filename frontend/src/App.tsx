@@ -5,12 +5,15 @@ import type { SideMenuSection } from './components/Navigation'
 import { DriveHud, EnginePanel, StatusStrip, TripPanel, VehicleStatus } from './components/Panels'
 import type { CockpitTab } from './components/cockpit.types'
 import { RoutePlanner, type DemoLocation } from './components/RoutePlanner'
+import { FoodStopsDialog } from './components/FoodStopsDialog'
 import { CockpitMap } from './features/map/CockpitMap'
 import { LA_LINEA, SAN_ROQUE } from './features/demo/constants'
 import { createFallbackRoute, fetchDemoRoute } from './features/map/route'
 import { useDemoDrive } from './features/map/useDemoDrive'
 import { useRealDrive } from './features/map/useRealDrive'
 import { getGuidancePresentation, getNavigationInstruction, getVoiceGuidance } from './features/map/navigation'
+import { selectFoodStopsAhead } from './features/map/routePlaces'
+import { useRouteContext } from './features/map/useRouteContext'
 import { useSpeech } from './hooks/useSpeech'
 import { useObd } from './hooks/useObd'
 import './App.css'
@@ -22,6 +25,7 @@ function App() {
   const [destination, setDestination] = useState<DemoLocation>({ label: 'San Roque', coordinate: SAN_ROQUE })
   const [rerouting, setRerouting] = useState(false)
   const [routePlannerOpen, setRoutePlannerOpen] = useState(false)
+  const [foodDialogOpen, setFoodDialogOpen] = useState(false)
   const [driveMode, setDriveMode] = useState<'demo' | 'real'>('demo')
   const demo = useDemoDrive({ route, autoPlay: false })
   const real = useRealDrive({ route, enabled: driveMode === 'real' })
@@ -36,11 +40,14 @@ function App() {
   const routeRequestRef = useRef<AbortController | null>(null)
   const maxSpeedRef = useRef(0)
   const spokenManeuversRef = useRef(new Set<string>())
+  const spokenMunicipalityRef = useRef('')
   const lastRerouteRef = useRef(0)
   const latestGpsCoordinateRef = useRef(real.gpsCoordinate)
   const [clock, setClock] = useState(() => new Date())
   const { speak } = useSpeech('es-ES')
   const obd = useObd()
+  const routeContext = useRouteContext(route, drive.telemetry.distanceM)
+  const foodStopsAhead = selectFoodStopsAhead(routeContext.foodStops, drive.telemetry.distanceM)
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), 30_000)
@@ -87,6 +94,7 @@ function App() {
 
   useEffect(() => {
     spokenManeuversRef.current.clear()
+    spokenMunicipalityRef.current = ''
   }, [route])
 
   useEffect(() => {
@@ -106,6 +114,14 @@ function App() {
     if (!voice) return
     speakOnce(voice.stage, voice.message)
   }, [drive.telemetry.isPlaying, drive.telemetry.roadName, navigation, speak])
+
+  useEffect(() => {
+    const locality = routeContext.municipality.trim()
+    if (!drive.telemetry.isPlaying || !locality || navigation.distanceM <= 350 || spokenMunicipalityRef.current === locality) return
+    const changingTown = Boolean(spokenMunicipalityRef.current)
+    spokenMunicipalityRef.current = locality
+    speak(changingTown ? `Entrando en ${locality}` : `Circulas por ${locality}`, false)
+  }, [drive.telemetry.isPlaying, navigation.distanceM, routeContext.municipality, speak])
 
   useEffect(() => {
     if (driveMode !== 'real' || !real.offRouteSinceMs || !real.offRoute) return
@@ -241,6 +257,7 @@ function App() {
     ] },
     { id: 'journey', label: 'Viaje y mapa', items: [
       { id: 'route-demo', label: 'Elegir ruta demo', subtitle: `${routeLabels.from} → ${routeLabels.to}`, icon: '↗', onSelect: () => setRoutePlannerOpen(true) },
+      { id: 'food-route', label: 'Comer en ruta', subtitle: routeContext.foodLoading ? 'Buscando lugares reales…' : `${foodStopsAhead.length} opciones próximas`, icon: '🍴', onSelect: () => setFoodDialogOpen(true) },
       { id: 'history', label: 'Historial de viajes', subtitle: 'Trayectos guardados y total', icon: '↶', onSelect: () => setTab('trip') },
       { id: 'radars', label: 'Radares', subtitle: 'Avisos mediante GPS', icon: '⌖', onSelect: () => showTool('Radares', 'El servicio de radares está preparado para conectarse al bloque de navegación.') },
       { id: 'parking', label: '¿Dónde aparqué?', subtitle: 'Guardar la posición del coche', icon: 'P', onSelect: saveParking },
@@ -285,7 +302,7 @@ function App() {
           <button className="cockpit-reset-button" type="button" onClick={drive.reset}>Reiniciar recorrido</button>
         </aside>
         <section className="cockpit-center-stage">
-          <CockpitMap route={route} telemetry={drive.telemetry} liveTelemetry={drive.liveTelemetry} fromLabel={driveMode === 'real' ? 'Ubicación actual' : routeLabels.from} toLabel={routeLabels.to} />
+          <CockpitMap route={route} telemetry={drive.telemetry} liveTelemetry={drive.liveTelemetry} fromLabel={driveMode === 'real' ? 'Ubicación actual' : routeLabels.from} toLabel={routeLabels.to} municipality={routeContext.municipality} />
           <DriveHud instruction={guidance.instruction} distanceLabel={navigation.distanceLabel} arrow={guidance.arrow} roadName={guidance.roadName} lanes={navigation.distanceM <= 700 ? navigation.maneuver?.lanes : undefined} destination={routeLabels.to} arrivalTime={arrivalTime} remainingKm={Number(remainingKm.toFixed(1))} heading={`${Math.round(drive.telemetry.bearingDeg)}°`} />
         </section>
         <aside className="cockpit-right-rail">
@@ -296,11 +313,12 @@ function App() {
             {tab === 'engine' && <EnginePanel dataMode={telemetryMode} coolantC={driveMode === 'demo' ? coolantC : obd.data.coolantC} oilC={driveMode === 'demo' ? oilC : obd.data.oilC} instantConsumption={driveMode === 'demo' ? instantConsumption : undefined} averageConsumption={driveMode === 'demo' ? averageConsumption : undefined} ecoScore={driveMode === 'demo' ? ecoScore : undefined} rpm={driveMode === 'demo' ? rpm : obd.data.rpm} speedKmh={speed} batteryVoltage={driveMode === 'demo' ? batteryVoltage : obd.data.batteryVoltage} engineLoadPercent={driveMode === 'demo' ? engineLoad : obd.data.engineLoadPercent} throttlePercent={driveMode === 'demo' ? throttle : obd.data.throttlePercent} intakeC={driveMode === 'demo' ? 21 : obd.data.intakeC} fuelPercent={driveMode === 'demo' ? fuelPercent : obd.data.fuelPercent} runtimeSeconds={driveMode === 'demo' ? drive.telemetry.elapsedS : undefined} onConnect={() => { void toggleObd() }} connectLabel={obd.connecting ? 'Conectando con OBD…' : obd.connected ? `Desconectar ${obd.deviceName}` : 'Conectar OBD Bluetooth'} obdError={obd.error} />}
           </div>
           <StatusStrip items={[{ id: 'gps', label: 'GPS', value: driveMode === 'demo' ? 'Demo' : real.hasFix ? `±${Math.round(real.accuracyM ?? 0)} m` : 'Buscando', icon: '⌖' }, { id: 'range', label: 'Autonomía', value: driveMode === 'demo' ? '486 km' : obd.connected && obd.data.fuelPercent !== undefined ? `${Math.round(obd.data.fuelPercent / 100 * 675)} km` : 'Sin dato', icon: '◒' }, { id: 'obd', label: 'OBD', value: obd.connecting ? 'Conectando' : obd.connected ? 'Conectado' : obd.supported ? 'Disponible' : 'No compatible', icon: '⌁' }]} />
-          <QuickActions actions={[{ id: 'route', label: 'Ruta', icon: '↗', active: true, onClick: () => setRoutePlannerOpen(true) }, { id: 'fuel', label: 'Combustible', icon: '◒', onClick: () => setTab('drive') }, { id: 'parking', label: 'Aparcar', icon: 'P', onClick: () => undefined }, { id: 'radar', label: 'Radar', icon: '⌖', onClick: () => undefined }]} />
+          <QuickActions actions={[{ id: 'route', label: 'Ruta', icon: '↗', active: true, onClick: () => setRoutePlannerOpen(true) }, { id: 'fuel', label: 'Combustible', icon: '◒', onClick: () => setTab('drive') }, { id: 'parking', label: 'Aparcar', icon: 'P', onClick: saveParking }, { id: 'food', label: 'Comer', icon: '🍴', onClick: () => setFoodDialogOpen(true) }]} />
         </aside>
       </section>
       <SideMenu open={menuOpen} onClose={() => setMenuOpen(false)} sections={menuSections} vehicleName="Sandero Stepway" />
       {routePlannerOpen && <RoutePlanner fromLabel={driveMode === 'real' ? 'Ubicación actual' : routeLabels.from} toLabel={routeLabels.to} onClose={() => setRoutePlannerOpen(false)} onApply={chooseDemoRoute} />}
+      {foodDialogOpen && <FoodStopsDialog stops={foodStopsAhead} currentDistanceM={drive.telemetry.distanceM} loading={routeContext.foodLoading} error={routeContext.foodError} onClose={() => setFoodDialogOpen(false)} />}
       {tool && <ToolDialog title={tool.title} text={tool.text} onClose={() => setTool(null)} />}
     </main>
   )

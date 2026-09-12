@@ -83,7 +83,7 @@ export function getVoiceGuidance(navigation: NavigationInstruction, currentRoad:
     if (isRoundabout && maneuver) {
       const exit = ordinal(Math.max(1, maneuver.exit ?? 1))
       const road = maneuver.roadName ? ` hacia ${maneuver.roadName}` : ''
-      return { stage: 'now', message: `Entra en la rotonda. Sal por la ${exit} salida${road}` }
+      return { stage: 'now', message: `Entra en la rotonda y toma la ${exit} salida${road}` }
     }
     return { stage: 'now', message: `Ahora, ${instruction}` }
   }
@@ -91,7 +91,7 @@ export function getVoiceGuidance(navigation: NavigationInstruction, currentRoad:
   if (navigation.distanceM <= 115) {
     if (isRoundabout && maneuver) {
       const exit = ordinal(Math.max(1, maneuver.exit ?? 1))
-      return { stage: 'near', message: `A 100 metros, rotonda. ${exit.charAt(0).toUpperCase() + exit.slice(1)} salida` }
+      return { stage: 'near', message: `A 100 metros llegarás a una rotonda. Toma la ${exit} salida` }
     }
     return { stage: 'near', message: `Dentro de 100 metros, ${instruction}` }
   }

@@ -47,7 +47,7 @@ function createFixedRouteArrows(route: DriveRoute) {
   return { type: 'FeatureCollection' as const, features }
 }
 
-export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel }: { route: DriveRoute; telemetry: DriveTelemetry; liveTelemetry: { current: DriveTelemetry }; fromLabel: string; toLabel: string }) {
+export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel, municipality }: { route: DriveRoute; telemetry: DriveTelemetry; liveTelemetry: { current: DriveTelemetry }; fromLabel: string; toLabel: string; municipality?: string }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -168,5 +168,5 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
     }
   }, [route, liveTelemetry])
 
-  return <div className="cockpit-map-wrap" ref={wrapRef}><div className="cockpit-map" ref={hostRef} /><div className="cockpit-map-label"><span>RUTA DEMO</span><strong>{fromLabel} → {toLabel}</strong><div className="cockpit-map-label__street"><span>CALLE ACTUAL</span><b>{telemetry.roadName || 'Vía sin nombre'}</b></div><div className="cockpit-map-label__environment"><em>{weather}</em><em>{altitude === null ? 'Altitud…' : `${altitude} m`}</em><em>{quality}</em></div></div><Car3D speed={telemetry.speedKph} /></div>
+  return <div className="cockpit-map-wrap" ref={wrapRef}><div className="cockpit-map" ref={hostRef} /><div className="cockpit-map-label"><span>RUTA DEMO</span><strong>{fromLabel} → {toLabel}</strong><div className="cockpit-map-label__place"><div><span>CALLE ACTUAL</span><b>{telemetry.roadName || 'Vía sin nombre'}</b></div><div><span>LOCALIDAD</span><b>{municipality || 'Localizando…'}</b></div></div><div className="cockpit-map-label__environment"><em>{weather}</em><em>{altitude === null ? 'Altitud…' : `${altitude} m`}</em><em>{quality}</em></div></div><Car3D speed={telemetry.speedKph} /></div>
 }

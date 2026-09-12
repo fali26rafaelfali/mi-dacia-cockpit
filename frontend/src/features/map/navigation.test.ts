@@ -25,11 +25,11 @@ test('da una instrucción de voz precisa antes y al entrar en una rotonda', () =
 
   expect(getVoiceGuidance(near, 'Avenida de España')).toEqual({
     stage: 'near',
-    message: 'A 100 metros, rotonda. Segunda salida',
+    message: 'A 100 metros llegarás a una rotonda. Toma la segunda salida',
   })
   expect(getVoiceGuidance(now, 'Avenida de España')).toEqual({
     stage: 'now',
-    message: 'Entra en la rotonda. Sal por la segunda salida hacia A-7',
+    message: 'Entra en la rotonda y toma la segunda salida hacia A-7',
   })
 })
 

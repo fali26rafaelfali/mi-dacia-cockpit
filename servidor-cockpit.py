@@ -14,6 +14,7 @@ DIST_DIR = BASE_DIR / "dist"
 LEGACY_FILE = BASE_DIR / "cockpit-dacia.html"
 DGT_XML = "https://nap.dgt.es/datex2/v3/dgt/SituationPublication/datex2_v37.xml"
 NOMINATIM_SEARCH = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_REVERSE = "https://nominatim.openstreetmap.org/reverse"
 OVERPASS_ENDPOINTS = (
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
     "https://overpass-api.de/api/interpreter",
@@ -92,6 +93,19 @@ async def geocode(q: str) -> Response:
         remote.content,
         media_type="application/json",
         headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/reverse-geocode")
+async def reverse_geocode(lat: float, lon: float) -> Response:
+    if not -90 <= lat <= 90 or not -180 <= lon <= 180:
+        raise HTTPException(status_code=400, detail="Coordenadas no válidas")
+    url = f"{NOMINATIM_REVERSE}?{urlencode({'lat': lat, 'lon': lon, 'format': 'jsonv2', 'zoom': 10, 'addressdetails': 1, 'accept-language': 'es'})}"
+    remote = await remote_response(url, timeout=15)
+    return Response(
+        remote.content,
+        media_type="application/json",
+        headers={"Cache-Control": "public, max-age=1800"},
     )
 
 

@@ -7,8 +7,9 @@ test('abre el cockpit y permite iniciar la demostración', async ({ page, contex
   await context.setGeolocation({ longitude: -5.453, latitude: 36.1408 })
   await page.route('https://router.project-osrm.org/**', (route) => { osrmCalls += 1; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 'Ok', routes: [{ geometry: { coordinates: FALLBACK_ROUTE }, legs: [{ steps: [{ distance: 100, name: 'Avenida de España', maneuver: { type: 'depart', modifier: 'straight', location: FALLBACK_ROUTE[0] } }, { distance: 8_000, name: 'A-7', maneuver: { type: 'turn', modifier: 'right', location: FALLBACK_ROUTE[1] }, intersections: [{ lanes: [{ indications: ['straight'], valid: false }, { indications: ['right'], valid: true }] }] }] }] }] }) }) })
   await page.route('https://api.open-meteo.com/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ current: { temperature_2m: 21, weather_code: 1, is_day: 1 } }) }))
-  await page.route('**/osm-overpass', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"elements":[]}' }))
+  await page.route('**/osm-overpass', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ elements: [{ id: 91, type: 'node', lat: 36.1745, lon: -5.3525, tags: { amenity: 'restaurant', name: 'Venta del Camino', cuisine: 'regional', opening_hours: 'Mo-Su 12:00-23:00' } }] }) }))
   await page.route('**/geocode?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ display_name: 'Calle Marqués de Larios, Centro Histórico, Málaga, Andalucía, España', lat: '36.7196694', lon: '-4.4215972' }]) }))
+  await page.route('**/reverse-geocode?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ display_name: 'La Línea de la Concepción, Cádiz, España', address: { city: 'La Línea de la Concepción' } }) }))
   const browserErrors: string[] = []
   const mapWarnings: string[] = []
   page.on('pageerror', (error) => browserErrors.push(error.message))
@@ -20,6 +21,12 @@ test('abre el cockpit y permite iniciar la demostración', async ({ page, contex
   })
   await page.goto('/')
   await expect(page.getByRole('heading', { name: /Mi Dacia/i })).toBeVisible()
+  await expect(page.getByText('La Línea de la Concepción', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Comer', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Comer en ruta' })).toBeVisible()
+  await expect(page.getByText('Venta del Camino')).toBeVisible()
+  await expect(page.getByText(/de la ruta/)).toBeVisible()
+  await page.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
   await page.getByRole('button', { name: 'Abrir menú' }).click()
   await expect(page.getByRole('heading', { name: 'Averías' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Viaje y mapa' })).toBeVisible()

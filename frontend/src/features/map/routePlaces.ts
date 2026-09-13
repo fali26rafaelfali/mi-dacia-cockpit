@@ -21,9 +21,13 @@ interface OsmElement {
   tags?: Record<string, string>
 }
 
-const overpassEndpoint = () => window.location.hostname.endsWith('.github.io')
-  ? 'https://overpass-api.de/api/interpreter'
-  : '/osm-overpass'
+const overpassEndpoints = () => window.location.hostname.endsWith('.github.io')
+  ? [
+      'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+      'https://overpass.private.coffee/api/interpreter',
+      'https://overpass-api.de/api/interpreter',
+    ]
+  : ['/osm-overpass']
 
 function sampledRoute(route: DriveRoute, maximum = 28): Coordinate[] {
   if (route.points.length <= maximum) return route.points.map(({ coordinate }) => coordinate)
@@ -64,15 +68,24 @@ export function parseFoodStops(elements: OsmElement[], route: DriveRoute): FoodS
 export async function fetchFoodStops(route: DriveRoute, signal?: AbortSignal): Promise<FoodStop[]> {
   const line = sampledRoute(route).flatMap(([longitude, latitude]) => [latitude.toFixed(6), longitude.toFixed(6)]).join(',')
   const query = `[out:json][timeout:20];nwr["amenity"~"^(restaurant|cafe|fast_food)$"]["name"](around:1200,${line});out center 100;`
-  const response = await fetch(overpassEndpoint(), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-    body: `data=${encodeURIComponent(query)}`,
-    signal,
-  })
-  if (!response.ok) throw new Error(`Overpass respondió ${response.status}`)
-  const payload = await response.json() as { elements?: OsmElement[] }
-  return parseFoodStops(payload.elements ?? [], route)
+  let lastError: unknown
+  for (const endpoint of overpassEndpoints()) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: `data=${encodeURIComponent(query)}`,
+        signal,
+      })
+      if (!response.ok) throw new Error(`Overpass respondió ${response.status}`)
+      const payload = await response.json() as { elements?: OsmElement[] }
+      return parseFoodStops(payload.elements ?? [], route)
+    } catch (error) {
+      if (signal?.aborted) throw error
+      lastError = error
+    }
+  }
+  throw lastError ?? new Error('No hay ningún servidor Overpass disponible')
 }
 
 interface ReverseResult {

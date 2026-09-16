@@ -49,8 +49,8 @@ function describe(maneuver: RouteManeuver, destination: string): { full: string;
   if (maneuver.type === 'arrive') return { full: `Has llegado a ${destination}`, short: 'Llegada al destino' }
   if (/exit roundabout|exit rotary/.test(maneuver.type)) return { full: `Sal de la rotonda${road}`, short: 'Sal de la rotonda' }
   if (/roundabout|rotary/.test(maneuver.type)) {
-    const exit = ordinal(Math.max(1, maneuver.exit ?? 1))
-    return { full: `En la rotonda, toma la ${exit} salida${road}`, short: `Rotonda · ${exit} salida` }
+    const exit = maneuver.exit && maneuver.exit > 0 ? `la ${ordinal(maneuver.exit)} salida` : 'la salida indicada'
+    return { full: `En la rotonda, toma ${exit}${road}`, short: `Rotonda · ${exit}` }
   }
   if (maneuver.type === 'merge') return { full: `Incorpórate${road}`, short: 'Incorpórate' }
   if (maneuver.type === 'fork') {
@@ -73,33 +73,35 @@ function describe(maneuver: RouteManeuver, destination: string): { full: string;
   return { full: maneuver.roadName ? `Continúa por ${maneuver.roadName}` : 'Continúa recto', short: 'Continúa recto' }
 }
 
-export function getVoiceGuidance(navigation: NavigationInstruction, currentRoad: string): VoiceGuidance | null {
+export function getVoiceGuidance(navigation: NavigationInstruction, currentRoad: string, speedKph = 0): VoiceGuidance | null {
   const maneuver = navigation.maneuver
-  if (maneuver && /exit roundabout|exit rotary/.test(maneuver.type)) return null
-  const isRoundabout = maneuver ? /roundabout|rotary/.test(maneuver.type) : false
+  if (!maneuver || /exit roundabout|exit rotary/.test(maneuver.type)) return null
+  const distance = navigation.distanceM
+  const nowThreshold = Math.min(65, Math.max(20, speedKph / 3.6 * 3))
+  const nearThreshold = Math.min(500, Math.max(115, speedKph / 3.6 * 12))
+  const stage = distance <= nowThreshold ? 'now' : distance <= nearThreshold ? 'near' : 'far'
+  const roundabout = /roundabout|rotary/.test(maneuver.type)
+  const road = maneuver.roadName ? ` hacia ${maneuver.roadName}` : ''
+  const exit = maneuver.exit && maneuver.exit > 0 ? `la ${ordinal(maneuver.exit)} salida` : 'la salida indicada'
   const instruction = navigation.instruction.charAt(0).toLowerCase() + navigation.instruction.slice(1)
-
-  if (navigation.distanceM <= 25) {
-    if (isRoundabout && maneuver) {
-      const exit = ordinal(Math.max(1, maneuver.exit ?? 1))
-      const road = maneuver.roadName ? ` hacia ${maneuver.roadName}` : ''
-      return { stage: 'now', message: `Entra en la rotonda y toma la ${exit} salida${road}` }
-    }
-    return { stage: 'now', message: `Ahora, ${instruction}` }
+  if (maneuver.type === 'arrive') {
+    return { stage, message: stage === 'now' ? 'Tu destino está justo delante' : `En ${navigation.distanceLabel} llegarás a tu destino` }
   }
-
-  if (navigation.distanceM <= 115) {
-    if (isRoundabout && maneuver) {
-      const exit = ordinal(Math.max(1, maneuver.exit ?? 1))
-      return { stage: 'near', message: `A 100 metros llegarás a una rotonda. Toma la ${exit} salida` }
-    }
-    return { stage: 'near', message: `Dentro de 100 metros, ${instruction}` }
+  if (stage === 'now') {
+    return { stage, message: roundabout ? `En la rotonda, toma ${exit}${road}` : `Ahora, ${instruction}` }
   }
-
-  return {
-    stage: 'far',
-    message: `Continúa recto durante ${navigation.distanceLabel}${currentRoad ? ` por ${currentRoad}` : ''}`,
+  if (stage === 'near') {
+    return { stage, message: roundabout
+      ? `En ${navigation.distanceLabel}, entra en la rotonda y toma ${exit}${road}`
+      : `En ${navigation.distanceLabel}, ${instruction}` }
   }
+  return { stage, message: `Continúa ${navigation.distanceLabel}${currentRoad ? ` por ${currentRoad}` : ' por esta vía'}` }
+}
+
+// Avanza de fase sin volver a emitir avisos antiguos si oscila el GPS.
+export function shouldAnnounceGuidance(previous: VoiceGuidance['stage'] | undefined, next: VoiceGuidance['stage']): boolean {
+  const order = { far: 0, near: 1, now: 2 }
+  return previous === undefined || order[next] > order[previous]
 }
 
 export function getNavigationInstruction(route: DriveRoute, distanceM: number, destination: string): NavigationInstruction {

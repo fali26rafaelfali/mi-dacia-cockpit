@@ -11,7 +11,7 @@ import { LA_LINEA, SAN_ROQUE } from './features/demo/constants'
 import { createFallbackRoute, fetchDemoRoute } from './features/map/route'
 import { useDemoDrive } from './features/map/useDemoDrive'
 import { useRealDrive } from './features/map/useRealDrive'
-import { getGuidancePresentation, getNavigationInstruction, getVoiceGuidance } from './features/map/navigation'
+import { getGuidancePresentation, getNavigationInstruction, getVoiceGuidance, shouldAnnounceGuidance, type VoiceGuidance } from './features/map/navigation'
 import { selectFoodStopsAhead } from './features/map/routePlaces'
 import { useRouteContext } from './features/map/useRouteContext'
 import { useSpeech } from './hooks/useSpeech'
@@ -39,12 +39,13 @@ function App() {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null)
   const routeRequestRef = useRef<AbortController | null>(null)
   const maxSpeedRef = useRef(0)
-  const spokenManeuversRef = useRef(new Set<string>())
+  const spokenManeuversRef = useRef(new Map<string, VoiceGuidance['stage']>())
   const spokenMunicipalityRef = useRef('')
   const lastRerouteRef = useRef(0)
   const latestGpsCoordinateRef = useRef(real.gpsCoordinate)
   const [clock, setClock] = useState(() => new Date())
-  const { speak } = useSpeech('es-ES')
+  const { speak, stopSpeaking } = useSpeech('es-ES')
+  const lastNavigationSpeechRef = useRef(0)
   const obd = useObd()
   const routeContext = useRouteContext(route, drive.telemetry.distanceM)
   const foodStopsAhead = selectFoodStopsAhead(routeContext.foodStops, drive.telemetry.distanceM)
@@ -104,24 +105,24 @@ function App() {
   useEffect(() => {
     if (!drive.telemetry.isPlaying || !navigation.maneuver) return
     const maneuverId = `${Math.round(navigation.maneuver.distanceM)}-${navigation.maneuver.type}`
-    const speakOnce = (stage: string, message: string) => {
-      const key = `${maneuverId}-${stage}`
-      if (spokenManeuversRef.current.has(key)) return
-      spokenManeuversRef.current.add(key)
-      speak(message)
+    const voice = getVoiceGuidance(navigation, drive.telemetry.roadName, speed)
+    if (!voice || !shouldAnnounceGuidance(spokenManeuversRef.current.get(maneuverId), voice.stage)) return
+    if (voice.stage !== 'now' && Date.now() - lastNavigationSpeechRef.current < 8_000) return
+    if (speak(voice.message)) {
+      spokenManeuversRef.current.set(maneuverId, voice.stage)
+      lastNavigationSpeechRef.current = Date.now()
     }
-    const voice = getVoiceGuidance(navigation, drive.telemetry.roadName)
-    if (!voice) return
-    speakOnce(voice.stage, voice.message)
-  }, [drive.telemetry.isPlaying, drive.telemetry.roadName, navigation, speak])
+  }, [drive.telemetry.isPlaying, drive.telemetry.roadName, navigation, speed, speak])
+
+  useEffect(() => {
+    if (!drive.telemetry.isPlaying) stopSpeaking()
+  }, [drive.telemetry.isPlaying, stopSpeaking])
 
   useEffect(() => {
     const locality = routeContext.municipality.trim()
-    if (!drive.telemetry.isPlaying || !locality || navigation.distanceM <= 350 || spokenMunicipalityRef.current === locality) return
-    const changingTown = Boolean(spokenMunicipalityRef.current)
-    spokenMunicipalityRef.current = locality
-    speak(changingTown ? `Entrando en ${locality}` : `Circulas por ${locality}`, false)
-  }, [drive.telemetry.isPlaying, navigation.distanceM, routeContext.municipality, speak])
+    if (!drive.telemetry.isPlaying || !locality || navigation.distanceM <= Math.max(350, speed / 3.6 * 25) || Date.now() - lastNavigationSpeechRef.current < 12_000 || spokenMunicipalityRef.current === locality) return
+    if (speak(`Circulas por ${locality}`, false)) spokenMunicipalityRef.current = locality
+  }, [drive.telemetry.isPlaying, navigation.distanceM, routeContext.municipality, speed, speak])
 
   useEffect(() => {
     if (driveMode !== 'real' || !real.offRouteSinceMs || !real.offRoute) return
@@ -154,6 +155,9 @@ function App() {
   }, [destination, driveMode, real.offRoute, real.offRouteSinceMs])
   const resetTrip = () => {
     maxSpeedRef.current = 0
+    spokenManeuversRef.current.clear()
+    stopSpeaking()
+    lastNavigationSpeechRef.current = 0
     drive.reset()
   }
   const toggleObd = async () => {
@@ -299,7 +303,7 @@ function App() {
           <button className="cockpit-demo-button" type="button" disabled={!routeReady} onClick={drive.telemetry.isPlaying ? drive.pause : drive.play}>
             {!routeReady ? 'Calculando ruta…' : driveMode === 'real' ? drive.telemetry.isPlaying ? 'Pausar GPS' : 'Iniciar GPS real' : drive.telemetry.isPlaying ? 'Pausar demo' : drive.telemetry.progress > 0 ? 'Continuar demo' : 'Probar demo'}
           </button>
-          <button className="cockpit-reset-button" type="button" onClick={drive.reset}>Reiniciar recorrido</button>
+          <button className="cockpit-reset-button" type="button" onClick={resetTrip}>Reiniciar recorrido</button>
         </aside>
         <section className="cockpit-center-stage">
           <CockpitMap route={route} telemetry={drive.telemetry} liveTelemetry={drive.liveTelemetry} fromLabel={driveMode === 'real' ? 'Ubicación actual' : routeLabels.from} toLabel={routeLabels.to} municipality={routeContext.municipality} />

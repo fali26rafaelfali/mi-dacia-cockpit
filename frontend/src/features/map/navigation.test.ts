@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { buildDriveRoute } from './route'
-import { formatNavigationDistance, getGuidancePresentation, getNavigationInstruction, getVoiceGuidance } from './navigation'
+import { formatNavigationDistance, getGuidancePresentation, getNavigationInstruction, getVoiceGuidance, shouldAnnounceGuidance } from './navigation'
 
 test('describe una rotonda con número de salida y distancia profesional', () => {
   const route = buildDriveRoute([[-5.45, 36.14], [-5.44, 36.145], [-5.43, 36.15]], 'osrm', [
@@ -25,11 +25,11 @@ test('da una instrucción de voz precisa antes y al entrar en una rotonda', () =
 
   expect(getVoiceGuidance(near, 'Avenida de España')).toEqual({
     stage: 'near',
-    message: 'A 100 metros llegarás a una rotonda. Toma la segunda salida',
+    message: 'En 100 metros, entra en la rotonda y toma la segunda salida hacia A-7',
   })
   expect(getVoiceGuidance(now, 'Avenida de España')).toEqual({
     stage: 'now',
-    message: 'Entra en la rotonda y toma la segunda salida hacia A-7',
+    message: 'En la rotonda, toma la segunda salida hacia A-7',
   })
 })
 
@@ -57,4 +57,26 @@ test('mantiene recto cuando el giro está lejos y muestra el giro a 100 metros',
   expect(getGuidancePresentation(far, 'Calle Real', 'Destino')).toMatchObject({ instruction: 'Continúa recto por Calle Real', arrow: '↑', approachingTurn: false })
   const close = getNavigationInstruction(route, far.maneuver!.distanceM - 100, 'Destino')
   expect(getGuidancePresentation(close, 'Calle Real', 'Destino')).toMatchObject({ instruction: 'Gira a la izquierda hacia Calle Sol', arrow: '←', approachingTurn: true })
+})
+
+
+test('usa la distancia actual y adelanta el aviso a velocidad alta', () => {
+  const route = buildDriveRoute([[-5.45, 36.14], [-5.43, 36.15]], 'osrm', [
+    { distanceM: 900, name: 'A-7', type: 'depart', modifier: 'straight' },
+    { distanceM: 100, name: 'Calle Sol', type: 'turn', modifier: 'left' },
+  ])
+  const turn = route.maneuvers[0].distanceM
+  const close = getNavigationInstruction(route, turn - 60, 'Destino')
+  expect(getVoiceGuidance(close, 'A-7', 20)?.message).toBe('En 60 metros, gira a la izquierda hacia Calle Sol')
+  const highway = getNavigationInstruction(route, turn - 300, 'Destino')
+  expect(getVoiceGuidance(highway, 'A-7', 100)?.stage).toBe('near')
+  expect(getVoiceGuidance(highway, 'A-7', 30)?.stage).toBe('far')
+})
+
+test('no repite ni retrocede a avisos anteriores cuando oscila el GPS', () => {
+  expect(shouldAnnounceGuidance(undefined, 'near')).toBe(true)
+  expect(shouldAnnounceGuidance('near', 'near')).toBe(false)
+  expect(shouldAnnounceGuidance('near', 'far')).toBe(false)
+  expect(shouldAnnounceGuidance('near', 'now')).toBe(true)
+  expect(shouldAnnounceGuidance('now', 'near')).toBe(false)
 })

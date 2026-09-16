@@ -21,6 +21,17 @@ interface SpeechWindow extends Window {
   webkitSpeechRecognition?: new () => SpeechRecognitionLike
 }
 
+export function selectNavigationVoice(voices: SpeechSynthesisVoice[], language: string): SpeechSynthesisVoice | undefined {
+  const lang = language.toLowerCase()
+  return voices.filter((voice) => voice.lang.toLowerCase().split('-')[0] === lang.split('-')[0])
+    .sort((a, b) => {
+      const score = (voice: SpeechSynthesisVoice) =>
+        (voice.lang.toLowerCase() === lang ? 100 : 0) +
+        (/natural|neural|google/i.test(voice.name) ? 20 : 0) + (voice.default ? 1 : 0)
+      return score(b) - score(a)
+    })[0]
+}
+
 export function useSpeech(language = 'es-ES') {
   const recognition = useRef<SpeechRecognitionLike | null>(null)
   const [listening, setListening] = useState(false)
@@ -58,12 +69,23 @@ export function useSpeech(language = 'es-ES') {
     return true
   }, [Recognition, language])
 
+  const stopSpeaking = useCallback(() => {
+    if (synthesisSupported) window.speechSynthesis.cancel()
+  }, [synthesisSupported])
+
   const speak = useCallback(
     (text: string, interrupt = true) => {
       if (!synthesisSupported) return false
+      // Los anuncios secundarios se descartan si hay una maniobra hablando.
+      if (!interrupt && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) return false
       if (interrupt) window.speechSynthesis.cancel()
       const utterance = new SpeechSynthesisUtterance(text)
-      utterance.lang = language
+      const voice = selectNavigationVoice(window.speechSynthesis.getVoices(), language)
+      if (voice) utterance.voice = voice
+      utterance.lang = voice?.lang ?? language
+      utterance.rate = 0.98
+      utterance.pitch = 1
+      utterance.volume = 1
       window.speechSynthesis.speak(utterance)
       return true
     },
@@ -87,6 +109,7 @@ export function useSpeech(language = 'es-ES') {
     error,
     startListening,
     stopListening,
+    stopSpeaking,
     speak,
   }
 }

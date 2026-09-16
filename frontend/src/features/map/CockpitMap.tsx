@@ -178,6 +178,12 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
       map.addLayer({ id: 'demo-route-arrows', type: 'symbol', source: 'route-arrows', layout: { 'symbol-placement': 'point', 'icon-image': 'route-direction-arrow', 'icon-anchor': 'center', 'icon-offset': [0, 0], 'icon-rotate': ['get', 'bearing'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 13, .55, 17.8, .82, 19.5, 1.45, 21, 2], 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map' } })
       map.addSource('route-travelled', { type: 'geojson', data: { ...routeData, geometry: { ...routeData.geometry, coordinates: [routeData.geometry.coordinates[0], routeData.geometry.coordinates[0]] } } })
       map.addLayer({ id: 'route-travelled-line', type: 'line', source: 'route-travelled', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#65beff', 'line-width': routeWidth, 'line-opacity': .72 } })
+      // Los escudos de carretera del estilo base deben quedar sobre el carril azul.
+      // El estilo repite CA-34 cada 200 px; damos más espacio para evitar la fila de carteles.
+      if (map.getLayer('highway-shield-non-us')) {
+        map.setLayoutProperty('highway-shield-non-us', 'symbol-spacing', 650)
+        map.moveLayer('highway-shield-non-us')
+      }
       map.moveLayer('demo-route-arrows')
       const bounds = new maplibregl.LngLatBounds()
       route.points.forEach((point) => bounds.extend([...point.coordinate]))

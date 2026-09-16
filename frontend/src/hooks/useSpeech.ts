@@ -26,6 +26,7 @@ export function selectNavigationVoice(voices: SpeechSynthesisVoice[], language: 
   return voices.filter((voice) => voice.lang.toLowerCase().split('-')[0] === lang.split('-')[0])
     .sort((a, b) => {
       const score = (voice: SpeechSynthesisVoice) =>
+        (/\b(pablo|jorge|diego|alvaro|álvaro|andres|andrés|carlos|male|masculin[oa])\b/i.test(voice.name) ? 1000 : 0) +
         (voice.lang.toLowerCase() === lang ? 100 : 0) +
         (/natural|neural|google/i.test(voice.name) ? 20 : 0) + (voice.default ? 1 : 0)
       return score(b) - score(a)

@@ -306,6 +306,44 @@ function signIcon(tags: OsmTags): string | undefined {
   return speed ? `speed-${speed}` : undefined
 }
 
+// Navigation badges: a consistent silhouette, large pictogram and a short label.
+// The traffic-light pictogram marks a location, not a live signal state.
+function navigationBadge(source: ImageData, label: string, accent: string): ImageData {
+  const canvas = document.createElement('canvas')
+  canvas.width = 144
+  canvas.height = 176
+  const context = canvas.getContext('2d')!
+  const pictogram = document.createElement('canvas')
+  pictogram.width = source.width
+  pictogram.height = source.height
+  pictogram.getContext('2d')!.putImageData(source, 0, 0)
+  context.scale(2, 2)
+  context.shadowColor = '#00000090'
+  context.shadowBlur = 8
+  context.shadowOffsetY = 3
+  context.fillStyle = '#0b1c2b'
+  context.strokeStyle = accent
+  context.lineWidth = 2
+  context.beginPath()
+  context.roundRect(5, 4, 62, 70, 14)
+  context.fill()
+  context.stroke()
+  context.shadowBlur = 0
+  context.shadowOffsetY = 0
+  context.fillStyle = accent
+  context.beginPath()
+  context.moveTo(29, 74)
+  context.lineTo(36, 84)
+  context.lineTo(43, 74)
+  context.fill()
+  context.drawImage(pictogram, 0, 0, 112, 100, 8, 8, 56, 50)
+  context.fillStyle = '#ffffff'
+  context.font = '800 8px system-ui, sans-serif'
+  context.textAlign = 'center'
+  context.fillText(label, 36, 67)
+  return context.getImageData(0, 0, 144, 176)
+}
+
 function routeBounds(route: DriveRoute, buffer = .006): [number, number, number, number] {
   const longitudes = route.points.map((point) => point.coordinate[0])
   const latitudes = route.points.map((point) => point.coordinate[1])
@@ -336,6 +374,17 @@ export function installOsmFurniture(map: MapLibreMap): void {
   for (const speed of [20, 30, 40, 50, 60, 70, 80, 90, 100, 120]) {
     images[`osm-speed-${speed}`] = roadSignIcon(`speed-${speed}`)
   }
+  const labels: Record<string, [string, string]> = {
+    'osm-signal': ['SEMÁFORO', '#ffcf59'],
+    'osm-camera': ['RADAR', '#60d5ff'],
+    'osm-crossing': ['PEATONES', '#70b6ff'],
+    'osm-stop': ['STOP', '#ff7272'],
+    'osm-yield': ['CEDA', '#ff9470'],
+  }
+  for (const [name, image] of Object.entries(images)) {
+    const badge = labels[name] ?? (name.startsWith('osm-speed-') ? ['km/h', '#ff7272'] : undefined)
+    if (badge) images[name] = navigationBadge(image, badge[0], badge[1])
+  }
   for (const [name, image] of Object.entries(images)) {
     if (!map.hasImage(name)) map.addImage(name, image, { pixelRatio: 2 })
   }
@@ -353,9 +402,9 @@ export function installOsmFurniture(map: MapLibreMap): void {
     layout: { 'icon-image': 'osm-lamp', 'icon-anchor': 'bottom', 'icon-size': ['interpolate', ['linear'], ['zoom'], 16.5, .48, 19.5, .9, 21, 1.2], 'icon-allow-overlap': false, 'icon-padding': 5, 'icon-pitch-alignment': 'viewport', 'icon-rotation-alignment': 'viewport' },
   })
   map.addLayer({
-    id: 'osm-signs', type: 'symbol', source: 'osm-road-furniture', minzoom: 16,
+    id: 'osm-signs', type: 'symbol', source: 'osm-road-furniture', minzoom: 14,
     filter: ['==', ['get', 'kind'], 'sign'],
-    layout: { 'icon-image': ['concat', 'osm-', ['get', 'icon']], 'icon-anchor': 'bottom', 'icon-size': ['interpolate', ['linear'], ['zoom'], 16, .46, 18, .7, 19.5, .92, 21, 1.08], 'icon-allow-overlap': false, 'icon-padding': 10, 'icon-pitch-alignment': 'viewport', 'icon-rotation-alignment': 'viewport' },
+    layout: { 'icon-image': ['concat', 'osm-', ['get', 'icon']], 'icon-anchor': 'bottom', 'icon-size': ['interpolate', ['linear'], ['zoom'], 14, .55, 16, .72, 18, .9, 19.5, 1, 21, 1.1], 'icon-allow-overlap': false, 'icon-padding': 6, 'icon-pitch-alignment': 'viewport', 'icon-rotation-alignment': 'viewport' },
   })
   map.addLayer({
     id: 'osm-peaks', type: 'symbol', source: 'osm-road-furniture', minzoom: 10, maxzoom: 17.8,

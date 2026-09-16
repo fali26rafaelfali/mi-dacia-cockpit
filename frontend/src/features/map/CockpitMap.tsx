@@ -54,6 +54,14 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
   const [weather, setWeather] = useState('Tiempo real…')
   const [altitude, setAltitude] = useState<number | null>(null)
   const [quality, setQuality] = useState('Relieve')
+  const [landscape, setLandscape] = useState(false)
+  const landscapeRef = useRef(false)
+  const toggleLandscape = () => {
+    const next = !landscapeRef.current
+    landscapeRef.current = next
+    setLandscape(next)
+    mapRef.current?.easeTo({ center: [...liveTelemetry.current.coordinate], zoom: next ? 14.5 : 18.25, pitch: next ? 72 : 69, duration: 800 })
+  }
 
   useEffect(() => {
     if (!hostRef.current || mapRef.current) return
@@ -94,7 +102,7 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
     })
     mapRef.current = map
     const marker = createVehicleMarker(map, markerNode, liveTelemetry.current.coordinate)
-    const stopAnimation = animateDriveMap(map, marker, closeCar, route, liveTelemetry, (meters) => setAltitude(Math.round(meters)))
+    const stopAnimation = animateDriveMap(map, marker, closeCar, route, liveTelemetry, (meters) => setAltitude(Math.round(meters)), landscapeRef)
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     map.on('load', () => {
@@ -109,7 +117,25 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
           encoding: 'terrarium',
           attribution: 'Terrain Tiles: AWS Open Data',
         })
-        map.setTerrain({ source: 'terrain-dem', exaggeration: 1.12 })
+        map.setTerrain({ source: 'terrain-dem', exaggeration: 1 })
+        // Una fuente separada para sombras evita compartir los cálculos del relieve.
+        map.addSource('terrain-shading-dem', {
+          type: 'raster-dem',
+          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+          tileSize: 256, minzoom: 0, maxzoom: 15, encoding: 'terrarium',
+        })
+        const firstRoad = map.getStyle().layers?.find((layer) => layer.type === 'line' || layer.type === 'symbol' || layer.type === 'fill-extrusion')?.id
+        map.addLayer({
+          id: 'terrain-slopes', type: 'hillshade', source: 'terrain-shading-dem',
+          paint: {
+            'hillshade-exaggeration': .45,
+            'hillshade-shadow-color': '#384435',
+            'hillshade-highlight-color': '#fff3d5',
+            'hillshade-accent-color': '#68765c',
+            'hillshade-illumination-anchor': 'map',
+          },
+        }, firstRoad)
+        map.setSky({ 'sky-color': '#80b7d9', 'horizon-color': '#d9e8ed', 'fog-color': '#d9e8ed', 'horizon-fog-blend': .15 })
       } catch (error) {
         console.warn('[Relieve real]', error)
       }
@@ -168,5 +194,5 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
     }
   }, [route, liveTelemetry])
 
-  return <div className="cockpit-map-wrap" ref={wrapRef}><div className="cockpit-map" ref={hostRef} /><div className="cockpit-map-label"><span>RUTA DEMO</span><strong>{fromLabel} → {toLabel}</strong><div className="cockpit-map-label__place"><div><span>CALLE ACTUAL</span><b>{telemetry.roadName || 'Vía sin nombre'}</b></div><div><span>LOCALIDAD</span><b>{municipality || 'Localizando…'}</b></div></div><div className="cockpit-map-label__environment"><em>{weather}</em><em>{altitude === null ? 'Altitud…' : `${altitude} m`}</em><em>{quality}</em></div></div><Car3D speed={telemetry.speedKph} /></div>
+  return <div className="cockpit-map-wrap" ref={wrapRef}><div className="cockpit-map" ref={hostRef} /><div className="cockpit-map-label"><span>RUTA DEMO</span><strong>{fromLabel} → {toLabel}</strong><div className="cockpit-map-label__place"><div><span>CALLE ACTUAL</span><b>{telemetry.roadName || 'Vía sin nombre'}</b></div><div><span>LOCALIDAD</span><b>{municipality || 'Localizando…'}</b></div></div><div className="cockpit-map-label__environment"><em>{weather}</em><em>{altitude === null ? 'Altitud…' : `${altitude} m`}</em><em>{quality}</em></div><button className="cockpit-landscape-toggle" type="button" aria-pressed={landscape} onClick={toggleLandscape}>{landscape ? 'Volver al coche' : 'Paisaje 3D'}</button></div><Car3D speed={telemetry.speedKph} /></div>
 }

@@ -32,7 +32,7 @@ export function smoothAngle(from: number, to: number, dt: number, seconds: numbe
 
 /** Un único reloj visual para coche y cámara, independiente de los renders de React. */
 export function animateDriveMap(map: MapLibreMap, marker: VehicleMarker, car: HTMLImageElement,
-  route: DriveRoute, live: { current: DriveTelemetry }, reportElevation?: (meters: number) => void): () => void {
+  route: DriveRoute, live: { current: DriveTelemetry }, reportElevation?: (meters: number) => void, landscape?: { current: boolean }): () => void {
   let frame = 0
   let previousTime = performance.now()
   let lastPose: DriveTelemetry | undefined
@@ -92,13 +92,13 @@ export function animateDriveMap(map: MapLibreMap, marker: VehicleMarker, car: HT
 
     if (pose.isPlaying && !pointerDown && now > interactionUntil) {
       const zoom = map.getZoom()
-      const pitch = zoom < 17 ? 48 : zoom < 18 ? 60 : 69
+      const pitch = landscape?.current ? 72 : zoom < 17 ? 60 : zoom < 18 ? 65 : 69
       if (starting || !following) {
         following = true
         transitionUntil = now + 650
-        const startingZoom = pose.roadClass === 'urban' ? 18.25 : pose.roadClass === 'road' ? 17.25 : 16.5
+        const startingZoom = landscape?.current ? zoom : pose.roadClass === 'urban' ? 18.25 : pose.roadClass === 'road' ? 17.25 : 16.5
         map.easeTo({ center: [...displayedCoordinate], bearing: heading,
-          zoom: starting ? startingZoom : zoom, pitch: starting ? 69 : pitch,
+          zoom: starting ? startingZoom : zoom, pitch: starting && !landscape?.current ? 69 : pitch,
           duration: 650, essential: true })
       } else if (now >= transitionUntil && now - lastCameraTime >= 33 && !map.isMoving()) {
         // Sin animaciones solapadas ni cambios bruscos de inclinación al hacer zoom.

@@ -64,7 +64,7 @@ export function applyMapWeather(map: MapLibreMap, host: HTMLElement, weather: Ma
     'sky-color': night ? '#050c19' : cloudy ? '#9aa9b4' : '#6eb7e8',
     'horizon-color': night ? '#17243b' : weather.fog ? '#c7c9c6' : '#d7e9f2',
     'fog-color': weather.fog ? '#c7c9c6' : night ? '#111c2d' : '#d6e8ef',
-    'horizon-fog-blend': weather.fog ? .85 : .35,
+    'horizon-fog-blend': weather.fog ? .85 : .15,
     'atmosphere-blend': night ? .75 : .55,
   })
   host.classList.toggle('cockpit-map-wrap--night', night)
@@ -88,7 +88,7 @@ export function installAdaptiveQuality(map: MapLibreMap, report: (quality: strin
     if (map.getLayer('building-3d')) {
       map.setPaintProperty('building-3d', 'fill-extrusion-opacity', zoom >= 18 ? .94 : zoom >= 16.5 ? .88 : .76)
     }
-    if (map.getTerrain()) map.setTerrain({ source: 'terrain-dem', exaggeration: zoom >= 18 ? 1.02 : 1.12 })
+    // Las alturas permanecen a escala real a cualquier nivel de zoom.
   }
   map.on('zoomend', update)
   update()

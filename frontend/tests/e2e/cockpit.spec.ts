@@ -25,7 +25,7 @@ test('abre el cockpit y permite iniciar la demostración', async ({ page, contex
   await page.getByRole('button', { name: 'Comer', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Comer en ruta' })).toBeVisible()
   await expect(page.getByText('Venta del Camino')).toBeVisible()
-  await expect(page.getByText(/de la ruta/)).toBeVisible()
+  await expect(page.getByRole('article').getByText(/de la ruta/)).toBeVisible()
   await page.getByRole('button', { name: 'Cerrar', exact: true }).last().click()
   await page.getByRole('button', { name: 'Abrir menú' }).click()
   await expect(page.getByRole('heading', { name: 'Averías' })).toBeVisible()

@@ -29,10 +29,15 @@ const overpassEndpoints = () => window.location.hostname.endsWith('.github.io')
     ]
   : ['/osm-overpass']
 
-function sampledRoute(route: DriveRoute, maximum = 28): Coordinate[] {
-  if (route.points.length <= maximum) return route.points.map(({ coordinate }) => coordinate)
-  return Array.from({ length: maximum }, (_, index) =>
-    route.points[Math.round(index * (route.points.length - 1) / (maximum - 1))].coordinate)
+export function foodRouteSegments(route: DriveRoute): Coordinate[][] {
+  // Conserva las curvas también en viajes largos; no une toda la ruta con solo 28 puntos.
+  const points = route.points.filter((point, index) => index === 0 || index === route.points.length - 1 ||
+    Math.floor(point.distanceM / 150) !== Math.floor(route.points[index - 1].distanceM / 150))
+  const segments: Coordinate[][] = []
+  for (let index = 0; index < points.length - 1; index += 119) {
+    segments.push(points.slice(index, index + 120).map(({ coordinate }) => coordinate))
+  }
+  return segments
 }
 
 export function parseFoodStops(elements: OsmElement[], route: DriveRoute): FoodStop[] {
@@ -66,26 +71,42 @@ export function parseFoodStops(elements: OsmElement[], route: DriveRoute): FoodS
 }
 
 export async function fetchFoodStops(route: DriveRoute, signal?: AbortSignal): Promise<FoodStop[]> {
-  const line = sampledRoute(route).flatMap(([longitude, latitude]) => [latitude.toFixed(6), longitude.toFixed(6)]).join(',')
-  const query = `[out:json][timeout:20];nwr["amenity"~"^(restaurant|cafe|fast_food)$"]["name"](around:1200,${line});out center 100;`
-  let lastError: unknown
-  for (const endpoint of overpassEndpoints()) {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-        body: `data=${encodeURIComponent(query)}`,
-        signal,
-      })
-      if (!response.ok) throw new Error(`Overpass respondió ${response.status}`)
-      const payload = await response.json() as { elements?: OsmElement[] }
-      return parseFoodStops(payload.elements ?? [], route)
-    } catch (error) {
-      if (signal?.aborted) throw error
-      lastError = error
+  const elements: OsmElement[] = []
+  for (const segment of foodRouteSegments(route)) {
+    const line = segment.flatMap(([longitude, latitude]) => [latitude.toFixed(6), longitude.toFixed(6)]).join(',')
+    const query = `[out:json][timeout:20];nwr["amenity"~"^(restaurant|cafe|fast_food)$"]["name"](around:1200,${line});out center;`
+    let succeeded = false
+    let lastError: unknown
+    for (const endpoint of overpassEndpoints()) {
+      const controller = new AbortController()
+      const abort = () => controller.abort()
+      if (signal?.aborted) throw new Error('Consulta cancelada')
+      signal?.addEventListener('abort', abort, { once: true })
+      const timer = window.setTimeout(abort, 25_000)
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+          body: `data=${encodeURIComponent(query)}`,
+          signal: controller.signal,
+        })
+        if (!response.ok) throw new Error(`Overpass respondió ${response.status}`)
+        const payload = await response.json() as { elements?: OsmElement[]; remark?: string }
+        if (!Array.isArray(payload.elements) || payload.remark) throw new Error('Consulta incompleta')
+        elements.push(...payload.elements)
+        succeeded = true
+        break
+      } catch (error) {
+        if (signal?.aborted) throw error
+        lastError = error
+      } finally {
+        window.clearTimeout(timer)
+        signal?.removeEventListener('abort', abort)
+      }
     }
+    if (!succeeded) throw lastError ?? new Error('No hay ningún servidor Overpass disponible')
   }
-  throw lastError ?? new Error('No hay ningún servidor Overpass disponible')
+  return parseFoodStops(elements, route)
 }
 
 interface ReverseResult {
@@ -105,19 +126,8 @@ export async function fetchMunicipality(coordinate: Coordinate, signal?: AbortSi
   return address.city ?? address.town ?? address.village ?? address.municipality ?? address.hamlet ?? payload.display_name?.split(',')[0] ?? 'Localidad sin identificar'
 }
 
-export function selectFoodStopsAhead(stops: FoodStop[], currentDistanceM: number, maximum = 6): FoodStop[] {
-  const candidates = stops
-    .filter((stop) => stop.routeDistanceM >= currentDistanceM - 300)
+export function selectFoodStopsAhead(stops: FoodStop[], currentDistanceM: number): FoodStop[] {
+  return stops
+    .filter((stop) => stop.routeDistanceM >= currentDistanceM)
     .sort((a, b) => a.routeDistanceM - b.routeDistanceM || a.detourM - b.detourM)
-  const selected: FoodStop[] = []
-  for (const stop of candidates) {
-    const nearbySelection = selected.find((chosen) => Math.abs(chosen.routeDistanceM - stop.routeDistanceM) < 2_000)
-    if (nearbySelection) {
-      if (stop.detourM < nearbySelection.detourM) selected[selected.indexOf(nearbySelection)] = stop
-      continue
-    }
-    selected.push(stop)
-    if (selected.length === maximum) break
-  }
-  return selected.sort((a, b) => a.routeDistanceM - b.routeDistanceM)
 }

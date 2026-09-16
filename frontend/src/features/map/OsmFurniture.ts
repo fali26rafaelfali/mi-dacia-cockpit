@@ -17,12 +17,29 @@ interface OverpassResponse {
 
 function iconCanvas(draw: (context: CanvasRenderingContext2D) => void): ImageData {
   const canvas = document.createElement('canvas')
-  canvas.width = 56
-  canvas.height = 76
+  canvas.width = 112
+  canvas.height = 152
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Canvas 2D no disponible')
+  context.scale(2, 2)
   draw(context)
   return context.getImageData(0, 0, canvas.width, canvas.height)
+}
+
+function signPost(context: CanvasRenderingContext2D, top = 38): void {
+  context.save()
+  context.shadowColor = '#0009'
+  context.shadowBlur = 5
+  context.shadowOffsetY = 3
+  const post = context.createLinearGradient(24, 0, 32, 0)
+  post.addColorStop(0, '#69737a')
+  post.addColorStop(.45, '#e1e6e9')
+  post.addColorStop(1, '#535c62')
+  context.fillStyle = post
+  context.beginPath()
+  context.roundRect(25, top, 6, 34, 2)
+  context.fill()
+  context.restore()
 }
 
 function treeIcon(): ImageData {
@@ -61,21 +78,33 @@ function lampIcon(): ImageData {
 
 function trafficSignalIcon(): ImageData {
   return iconCanvas((context) => {
-    context.strokeStyle = '#444a4f'
-    context.lineWidth = 4
+    signPost(context, 43)
+    context.save()
+    context.shadowColor = '#000b'
+    context.shadowBlur = 7
+    context.shadowOffsetY = 4
+    const body = context.createLinearGradient(15, 0, 42, 0)
+    body.addColorStop(0, '#0d1114')
+    body.addColorStop(.5, '#353d42')
+    body.addColorStop(1, '#090c0e')
+    context.fillStyle = body
     context.beginPath()
-    context.moveTo(28, 71)
-    context.lineTo(28, 45)
-    context.stroke()
-    context.fillStyle = '#20262a'
-    context.beginPath()
-    context.roundRect(16, 3, 24, 45, 5)
+    context.roundRect(15, 2, 26, 47, 6)
     context.fill()
-    for (const [color, y] of [['#7c2929', 12], ['#77671f', 25], ['#267447', 38]] as const) {
+    context.restore()
+    for (const [color, y] of [['#ff3b35', 11], ['#ffc52e', 25], ['#35dc78', 39]] as const) {
+      context.fillStyle = '#080b0d'
+      context.beginPath()
+      context.arc(28, y, 7, 0, Math.PI * 2)
+      context.fill()
+      context.save()
+      context.shadowColor = color
+      context.shadowBlur = 8
       context.fillStyle = color
       context.beginPath()
-      context.arc(28, y, 5, 0, Math.PI * 2)
+      context.arc(28, y, 4.5, 0, Math.PI * 2)
       context.fill()
+      context.restore()
     }
   })
 }
@@ -132,12 +161,11 @@ function crossingIcon(): ImageData {
 
 function roadSignIcon(kind: string): ImageData {
   return iconCanvas((context) => {
-    context.strokeStyle = '#51575c'
-    context.lineWidth = 4
-    context.beginPath()
-    context.moveTo(28, 71)
-    context.lineTo(28, 39)
-    context.stroke()
+    signPost(context)
+    context.save()
+    context.shadowColor = '#000b'
+    context.shadowBlur = 7
+    context.shadowOffsetY = 4
     if (kind === 'stop') {
       context.fillStyle = '#d92727'
       context.strokeStyle = '#fff'
@@ -154,9 +182,10 @@ function roadSignIcon(kind: string): ImageData {
       context.fill()
       context.stroke()
       context.fillStyle = '#fff'
-      context.font = '800 9px sans-serif'
+      context.font = '900 9px system-ui, sans-serif'
       context.textAlign = 'center'
       context.fillText('STOP', 28, 24)
+      context.restore()
       return
     }
     if (kind === 'yield') {
@@ -170,6 +199,7 @@ function roadSignIcon(kind: string): ImageData {
       context.closePath()
       context.fill()
       context.stroke()
+      context.restore()
       return
     }
     const speed = kind.replace('speed-', '')
@@ -180,8 +210,9 @@ function roadSignIcon(kind: string): ImageData {
     context.arc(28, 22, 19, 0, Math.PI * 2)
     context.fill()
     context.stroke()
+    context.restore()
     context.fillStyle = '#15191d'
-    context.font = '800 16px sans-serif'
+    context.font = '900 16px system-ui, sans-serif'
     context.textAlign = 'center'
     context.fillText(speed, 28, 28)
   })
@@ -246,7 +277,7 @@ export function installOsmFurniture(map: MapLibreMap): void {
   map.addLayer({
     id: 'osm-signs', type: 'symbol', source: 'osm-road-furniture', minzoom: 16,
     filter: ['==', ['get', 'kind'], 'sign'],
-    layout: { 'icon-image': ['concat', 'osm-', ['get', 'icon']], 'icon-anchor': 'bottom', 'icon-size': ['interpolate', ['linear'], ['zoom'], 16, .55, 19.5, 1, 21, 1.25], 'icon-allow-overlap': false, 'icon-padding': 8, 'icon-pitch-alignment': 'viewport', 'icon-rotation-alignment': 'viewport' },
+    layout: { 'icon-image': ['concat', 'osm-', ['get', 'icon']], 'icon-anchor': 'bottom', 'icon-size': ['interpolate', ['linear'], ['zoom'], 16, .46, 18, .7, 19.5, .92, 21, 1.08], 'icon-allow-overlap': false, 'icon-padding': 10, 'icon-pitch-alignment': 'viewport', 'icon-rotation-alignment': 'viewport' },
   })
   map.addLayer({
     id: 'osm-peaks', type: 'symbol', source: 'osm-road-furniture', minzoom: 10, maxzoom: 17.8,

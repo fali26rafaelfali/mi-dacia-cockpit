@@ -42,10 +42,41 @@ function signPost(context: CanvasRenderingContext2D, top = 38): void {
   context.restore()
 }
 
+function groundGlow(context: CanvasRenderingContext2D, color = '#65c8ff'): void {
+  context.save()
+  const glow = context.createRadialGradient(28, 70, 1, 28, 70, 21)
+  glow.addColorStop(0, `${color}70`)
+  glow.addColorStop(.55, `${color}24`)
+  glow.addColorStop(1, '#00000000')
+  context.fillStyle = glow
+  context.scale(1, .28)
+  context.beginPath()
+  context.arc(28, 248, 21, 0, Math.PI * 2)
+  context.fill()
+  context.restore()
+}
+
+function gloss(context: CanvasRenderingContext2D, x: number, y: number, width: number): void {
+  const shine = context.createLinearGradient(x, y, x + width, y)
+  shine.addColorStop(0, '#ffffff00')
+  shine.addColorStop(.45, '#ffffff70')
+  shine.addColorStop(.62, '#ffffff18')
+  shine.addColorStop(1, '#ffffff00')
+  context.fillStyle = shine
+  context.fillRect(x, y, width, 3)
+}
+
 function treeIcon(): ImageData {
   return iconCanvas((context) => {
-    context.fillStyle = '#694b32'
-    context.fillRect(25, 39, 6, 31)
+    groundGlow(context, '#5dff9a')
+    const trunk = context.createLinearGradient(23, 0, 32, 0)
+    trunk.addColorStop(0, '#4b2a18')
+    trunk.addColorStop(.5, '#9b6840')
+    trunk.addColorStop(1, '#382014')
+    context.fillStyle = trunk
+    context.beginPath()
+    context.roundRect(24, 36, 8, 35, 3)
+    context.fill()
     const crown = context.createRadialGradient(22, 22, 3, 28, 29, 25)
     crown.addColorStop(0, '#8cbd67')
     crown.addColorStop(.55, '#477f49')
@@ -56,11 +87,19 @@ function treeIcon(): ImageData {
       context.arc(x, y, radius, 0, Math.PI * 2)
       context.fill()
     }
+    context.save()
+    context.globalAlpha = .52
+    context.fillStyle = '#c8ff9b'
+    context.beginPath()
+    context.arc(21, 15, 7, 0, Math.PI * 2)
+    context.fill()
+    context.restore()
   })
 }
 
 function lampIcon(): ImageData {
   return iconCanvas((context) => {
+    groundGlow(context, '#ffd66c')
     context.strokeStyle = '#41484d'
     context.lineWidth = 4
     context.lineCap = 'round'
@@ -73,11 +112,24 @@ function lampIcon(): ImageData {
     context.beginPath()
     context.roundRect(32, 6, 15, 8, 3)
     context.fill()
+    const light = context.createRadialGradient(39, 14, 1, 39, 24, 25)
+    light.addColorStop(0, '#fff7b8b8')
+    light.addColorStop(.35, '#ffd75a3d')
+    light.addColorStop(1, '#ffd75a00')
+    context.fillStyle = light
+    context.beginPath()
+    context.moveTo(32, 12)
+    context.lineTo(47, 12)
+    context.lineTo(55, 54)
+    context.lineTo(19, 54)
+    context.closePath()
+    context.fill()
   })
 }
 
 function trafficSignalIcon(): ImageData {
   return iconCanvas((context) => {
+    groundGlow(context, '#41ef8a')
     signPost(context, 43)
     context.save()
     context.shadowColor = '#000b'
@@ -104,13 +156,19 @@ function trafficSignalIcon(): ImageData {
       context.beginPath()
       context.arc(28, y, 4.5, 0, Math.PI * 2)
       context.fill()
+      context.fillStyle = '#ffffffa8'
+      context.beginPath()
+      context.arc(26.5, y - 1.5, 1.2, 0, Math.PI * 2)
+      context.fill()
       context.restore()
     }
+    gloss(context, 17, 5, 22)
   })
 }
 
 function cameraIcon(): ImageData {
   return iconCanvas((context) => {
+    groundGlow(context, '#64c8ff')
     context.fillStyle = '#31383d'
     context.fillRect(25, 37, 5, 34)
     context.fillStyle = '#f2f5f7'
@@ -128,11 +186,25 @@ function cameraIcon(): ImageData {
     context.beginPath()
     context.arc(29, 25, 4, 0, Math.PI * 2)
     context.fill()
+    context.fillStyle = '#eaffff'
+    context.beginPath()
+    context.arc(27, 23, 1.5, 0, Math.PI * 2)
+    context.fill()
+    context.fillStyle = '#ff4242'
+    context.shadowColor = '#ff4242'
+    context.shadowBlur = 7
+    context.beginPath()
+    context.arc(42, 16, 2, 0, Math.PI * 2)
+    context.fill()
   })
 }
 
 function crossingIcon(): ImageData {
   return iconCanvas((context) => {
+    groundGlow(context, '#4da7ff')
+    context.save()
+    context.shadowColor = '#258dff'
+    context.shadowBlur = 10
     context.fillStyle = '#ffffff'
     context.strokeStyle = '#1768a9'
     context.lineWidth = 4
@@ -143,6 +215,7 @@ function crossingIcon(): ImageData {
     context.closePath()
     context.fill()
     context.stroke()
+    context.restore()
     context.strokeStyle = '#1f2930'
     context.lineWidth = 4
     context.beginPath()
@@ -156,11 +229,13 @@ function crossingIcon(): ImageData {
     context.moveTo(25, 31)
     context.lineTo(35, 38)
     context.stroke()
+    gloss(context, 11, 8, 34)
   })
 }
 
 function roadSignIcon(kind: string): ImageData {
   return iconCanvas((context) => {
+    groundGlow(context, kind === 'stop' || kind === 'yield' ? '#ff4c4c' : '#ffffff')
     signPost(context)
     context.save()
     context.shadowColor = '#000b'
@@ -185,6 +260,7 @@ function roadSignIcon(kind: string): ImageData {
       context.font = '900 9px system-ui, sans-serif'
       context.textAlign = 'center'
       context.fillText('STOP', 28, 24)
+      gloss(context, 15, 9, 26)
       context.restore()
       return
     }
@@ -199,6 +275,7 @@ function roadSignIcon(kind: string): ImageData {
       context.closePath()
       context.fill()
       context.stroke()
+      gloss(context, 14, 10, 28)
       context.restore()
       return
     }
@@ -215,6 +292,7 @@ function roadSignIcon(kind: string): ImageData {
     context.font = '900 16px system-ui, sans-serif'
     context.textAlign = 'center'
     context.fillText(speed, 28, 28)
+    gloss(context, 14, 10, 28)
   })
 }
 

@@ -62,6 +62,40 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
     setLandscape(next)
     mapRef.current?.easeTo({ center: [...liveTelemetry.current.coordinate], zoom: next ? 14.5 : 18.25, pitch: next ? 72 : 69, duration: 800 })
   }
+  const [satellite, setSatellite] = useState(false)
+  const satelliteRef = useRef(false)
+  const toggleSatellite = () => {
+    const map = mapRef.current
+    if (!map) return
+    const next = !satelliteRef.current
+    satelliteRef.current = next
+    setSatellite(next)
+    if (map.getLayer('satellite-imagery')) map.setLayoutProperty('satellite-imagery', 'visibility', next ? 'visible' : 'none')
+    // Con satélite ya se ve el relieve real, así que apagamos el sombreado sintético.
+    if (map.getLayer('terrain-slopes')) map.setLayoutProperty('terrain-slopes', 'visibility', next ? 'none' : 'visible')
+    // Edificios algo translúcidos sobre el satélite para no tapar la calle real.
+    if (map.getLayer('building-3d')) map.setPaintProperty('building-3d', 'fill-extrusion-opacity', next ? 0.82 : 0.94)
+  }
+  // NIVEL B: edificios foto-realistas de Google (necesita clave en .env.local).
+  const google3dKey = import.meta.env.VITE_GOOGLE3D_KEY as string | undefined
+  const [photoreal, setPhotoreal] = useState(false)
+  const [photorealNote, setPhotorealNote] = useState('')
+  const photorealRef = useRef<{ setEnabled(enabled: boolean): void; destroy(): void } | null>(null)
+  const togglePhotoreal = async () => {
+    if (!google3dKey) {
+      setPhotorealNote('Falta tu clave de Google (VITE_GOOGLE3D_KEY) para el 3D real.')
+      return
+    }
+    const map = mapRef.current
+    if (!map) return
+    const next = !photoreal
+    setPhotoreal(next)
+    if (!photorealRef.current) {
+      const { createPhotoreal3D } = await import('./photoreal3d')
+      photorealRef.current = createPhotoreal3D(map, google3dKey)
+    }
+    photorealRef.current.setEnabled(next)
+  }
 
   useEffect(() => {
     if (!hostRef.current || mapRef.current) return
@@ -135,6 +169,21 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
             'hillshade-illumination-anchor': 'map',
           },
         }, firstRoad)
+        // Imágenes reales de satélite (Esri World Imagery, sin clave). Ocultas por defecto:
+        // se activan con el botón "Satélite". Se dibujan sobre los rellenos del estilo
+        // (tierra, agua, usos) pero por debajo de calles y edificios 3D.
+        map.addSource('satellite-imagery', {
+          type: 'raster',
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256,
+          maxzoom: 19,
+          attribution: 'Imágenes: Esri, Maxar, Earthstar Geographics',
+        })
+        map.addLayer({
+          id: 'satellite-imagery', type: 'raster', source: 'satellite-imagery',
+          layout: { visibility: 'none' },
+          paint: { 'raster-opacity': 1 },
+        }, firstRoad)
         map.setSky({ 'sky-color': '#80b7d9', 'horizon-color': '#d9e8ed', 'fog-color': '#d9e8ed', 'horizon-fog-blend': .15 })
       } catch (error) {
         console.warn('[Relieve real]', error)
@@ -194,11 +243,13 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
       furnitureController.abort()
       stopAdaptiveQuality()
       stopAnimation()
+      photorealRef.current?.destroy()
+      photorealRef.current = null
       marker.remove()
       map.remove()
       mapRef.current = null
     }
   }, [route, liveTelemetry])
 
-  return <div className="cockpit-map-wrap" ref={wrapRef}><div className="cockpit-map" ref={hostRef} /><div className="cockpit-map-label"><span>RUTA DEMO</span><strong>{fromLabel} → {toLabel}</strong><div className="cockpit-map-label__place"><div><span>CALLE ACTUAL</span><b>{telemetry.roadName || 'Vía sin nombre'}</b></div><div><span>LOCALIDAD</span><b>{municipality || 'Localizando…'}</b></div></div><div className="cockpit-map-label__environment"><em>{weather}</em><em>{altitude === null ? 'Altitud…' : `${altitude} m`}</em><em>{quality}</em></div><button className="cockpit-landscape-toggle" type="button" aria-pressed={landscape} onClick={toggleLandscape}>{landscape ? 'Volver al coche' : 'Paisaje 3D'}</button></div><Car3D speed={telemetry.speedKph} /></div>
+  return <div className="cockpit-map-wrap" ref={wrapRef}><div className="cockpit-map" ref={hostRef} /><div className="cockpit-map-label"><span>RUTA DEMO</span><strong>{fromLabel} → {toLabel}</strong><div className="cockpit-map-label__place"><div><span>CALLE ACTUAL</span><b>{telemetry.roadName || 'Vía sin nombre'}</b></div><div><span>LOCALIDAD</span><b>{municipality || 'Localizando…'}</b></div></div><div className="cockpit-map-label__environment"><em>{weather}</em><em>{altitude === null ? 'Altitud…' : `${altitude} m`}</em><em>{quality}</em></div><div className="cockpit-map-toggles"><button className="cockpit-landscape-toggle" type="button" aria-pressed={landscape} onClick={toggleLandscape}>{landscape ? 'Volver al coche' : 'Paisaje 3D'}</button><button className="cockpit-landscape-toggle" type="button" aria-pressed={satellite} onClick={toggleSatellite}>{satellite ? 'Mapa normal' : 'Satélite'}</button><button className="cockpit-landscape-toggle" type="button" aria-pressed={photoreal} onClick={togglePhotoreal} title={google3dKey ? 'Edificios foto-realistas de Google' : 'Necesita tu clave de Google (Nivel B)'}>{photoreal ? '3D normal' : '3D real'}</button></div>{photorealNote ? <em className="cockpit-photoreal-note">{photorealNote}</em> : null}</div><Car3D speed={telemetry.speedKph} /></div>
 }

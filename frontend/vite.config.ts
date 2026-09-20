@@ -75,6 +75,7 @@ export default defineConfig({
     proxy: {
       '/dgt-incidencias': 'http://127.0.0.1:8000',
       '/osm-overpass': 'http://127.0.0.1:8000',
+      '/live-aircraft': 'http://127.0.0.1:8000',
     },
   },
   build: {

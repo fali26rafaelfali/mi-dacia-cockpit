@@ -22,6 +22,7 @@ OVERPASS_ENDPOINTS = (
 )
 HOST, PORT = "127.0.0.1", 8000
 HEADERS = {"User-Agent": "CockpitDacia/2.0 (tablet; OSM 3D)"}
+ADSB_POINT = "https://api.adsb.lol/v2/point"
 
 app = FastAPI(title="Mi Dacia Cockpit", docs_url="/api/docs")
 
@@ -107,6 +108,37 @@ async def reverse_geocode(lat: float, lon: float) -> Response:
         media_type="application/json",
         headers={"Cache-Control": "public, max-age=1800"},
     )
+
+
+@app.get("/live-aircraft")
+async def live_aircraft(lat: float, lon: float, radius_km: float = 180) -> Response:
+    """Aviones ADS-B cercanos normalizados para la vista global del cockpit."""
+    if not -90 <= lat <= 90 or not -180 <= lon <= 180:
+        raise HTTPException(status_code=400, detail="Coordenadas no válidas")
+    radius_nm = min(250, max(10, radius_km / 1.852))
+    remote = await remote_response(f"{ADSB_POINT}/{lat:.5f}/{lon:.5f}/{radius_nm:.1f}", timeout=12)
+    payload = remote.json()
+    aircraft = []
+    for item in payload.get("ac", []):
+        plane_lat, plane_lon = item.get("lat"), item.get("lon")
+        if plane_lat is None or plane_lon is None or float(item.get("seen_pos", 999)) > 60:
+            continue
+        altitude_ft = item.get("alt_geom") or item.get("alt_baro")
+        altitude_m = round(float(altitude_ft) * 0.3048) if isinstance(altitude_ft, (int, float)) else None
+        speed_knots = item.get("gs")
+        aircraft.append({
+            "id": str(item.get("hex", "unknown")),
+            "callsign": str(item.get("flight") or "").strip(),
+            "registration": item.get("r"),
+            "coordinate": [float(plane_lon), float(plane_lat)],
+            "altitudeM": altitude_m,
+            "speedKph": round(float(speed_knots) * 1.852) if isinstance(speed_knots, (int, float)) else None,
+            "bearingDeg": float(item.get("track") or item.get("true_heading") or 0),
+        })
+    import datetime
+    body = {"aircraft": aircraft[:120], "updatedAt": datetime.datetime.now(datetime.UTC).isoformat()}
+    import json
+    return Response(json.dumps(body), media_type="application/json", headers={"Cache-Control": "public, max-age=10"})
 
 
 @app.get("/legacy")

@@ -32,7 +32,8 @@ export function smoothAngle(from: number, to: number, dt: number, seconds: numbe
 
 /** Un único reloj visual para coche y cámara, independiente de los renders de React. */
 export function animateDriveMap(map: MapLibreMap, marker: VehicleMarker, car: HTMLImageElement,
-  route: DriveRoute, live: { current: DriveTelemetry }, reportElevation?: (meters: number) => void, landscape?: { current: boolean }): () => void {
+  route: DriveRoute, live: { current: DriveTelemetry }, reportElevation?: (meters: number) => void,
+  landscape?: { current: boolean }, overview?: { current: boolean }): () => void {
   let frame = 0
   let previousTime = performance.now()
   let lastPose: DriveTelemetry | undefined
@@ -90,7 +91,7 @@ export function animateDriveMap(map: MapLibreMap, marker: VehicleMarker, car: HT
       ]
     }
 
-    if (pose.isPlaying && !pointerDown && now > interactionUntil) {
+    if (pose.isPlaying && !overview?.current && !pointerDown && now > interactionUntil) {
       const zoom = map.getZoom()
       const pitch = landscape?.current ? 72 : zoom < 17 ? 60 : zoom < 18 ? 65 : 69
       if (starting || !following) {

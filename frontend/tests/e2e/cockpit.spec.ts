@@ -10,6 +10,7 @@ test('abre el cockpit y permite iniciar la demostración', async ({ page, contex
   await page.route('**/osm-overpass', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ elements: [{ id: 91, type: 'node', lat: 36.1745, lon: -5.3525, tags: { amenity: 'restaurant', name: 'Venta del Camino', cuisine: 'regional', opening_hours: 'Mo-Su 12:00-23:00' } }] }) }))
   await page.route('**/geocode?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ display_name: 'Calle Marqués de Larios, Centro Histórico, Málaga, Andalucía, España', lat: '36.7196694', lon: '-4.4215972' }]) }))
   await page.route('**/reverse-geocode?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ display_name: 'La Línea de la Concepción, Cádiz, España', address: { city: 'La Línea de la Concepción' } }) }))
+  await page.route('**/live-aircraft?**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ updatedAt: new Date().toISOString(), aircraft: [{ id: 'abc123', callsign: 'IBE3172', coordinate: [-5.5, 36.3], altitudeM: 9200, speedKph: 710, bearingDeg: 74 }] }) }))
   const browserErrors: string[] = []
   const mapWarnings: string[] = []
   page.on('pageerror', (error) => browserErrors.push(error.message))
@@ -25,6 +26,9 @@ test('abre el cockpit y permite iniciar la demostración', async ({ page, contex
   await expect(page.getByRole('button', { name: 'Volver al coche' })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Volver al coche' }).click()
   await expect(page.getByRole('button', { name: 'Paisaje 3D' })).toHaveAttribute('aria-pressed', 'false')
+  await page.getByRole('button', { name: 'Vista global', exact: true }).click()
+  await expect(page.getByLabel('Datos de la vista global')).toContainText('1 aviones reales')
+  await page.getByRole('button', { name: 'Volver a navegación', exact: true }).click()
   await expect(page.getByText('La Línea de la Concepción', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Comer', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Comer en ruta' })).toBeVisible()

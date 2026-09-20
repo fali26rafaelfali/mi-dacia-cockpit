@@ -9,6 +9,7 @@ import { Car3D } from './Car3D'
 import { installOsmFurniture, loadRealOsmFurniture } from './OsmFurniture'
 import { applyMapWeather, installAdaptiveQuality, loadRealWeather } from './MapEnvironment'
 import { installManeuverPreview } from './Maneuvers3D'
+import { enterGodsEyeView, installGodsEyeLayers, leaveGodsEyeView, loadAircraftNear } from './GodsEyeView'
 
 maplibregl.setWorkerUrl(`${import.meta.env.BASE_URL}assets/maplibre-gl-worker.mjs`)
 
@@ -56,7 +57,14 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
   const [quality, setQuality] = useState('Relieve')
   const [landscape, setLandscape] = useState(false)
   const landscapeRef = useRef(false)
+  const globalViewRef = useRef(false)
+  const globalRefreshRef = useRef<number | null>(null)
+  const globalAbortRef = useRef<AbortController | null>(null)
+  const previousSatelliteRef = useRef(false)
+  const [globalView, setGlobalView] = useState(false)
+  const [globalStatus, setGlobalStatus] = useState('Pulsa para ver el entorno desde el aire')
   const toggleLandscape = () => {
+    if (globalViewRef.current) return
     const next = !landscapeRef.current
     landscapeRef.current = next
     setLandscape(next)
@@ -75,6 +83,47 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
     if (map.getLayer('terrain-slopes')) map.setLayoutProperty('terrain-slopes', 'visibility', next ? 'none' : 'visible')
     // Edificios algo translúcidos sobre el satélite para no tapar la calle real.
     if (map.getLayer('building-3d')) map.setPaintProperty('building-3d', 'fill-extrusion-opacity', next ? 0.82 : 0.94)
+  }
+  const refreshGlobalContacts = async () => {
+    const map = mapRef.current
+    if (!map || !globalViewRef.current) return
+    globalAbortRef.current?.abort()
+    const controller = new AbortController()
+    globalAbortRef.current = controller
+    setGlobalStatus('Buscando aviones reales cercanos…')
+    try {
+      const result = await loadAircraftNear(map, liveTelemetry.current.coordinate, controller.signal)
+      setGlobalStatus(`${result.count} aviones reales · actualizado ahora`)
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setGlobalStatus(error instanceof Error ? error.message : 'Datos en vivo no disponibles')
+      }
+    }
+  }
+  const toggleGlobalView = () => {
+    const map = mapRef.current
+    if (!map) return
+    const next = !globalViewRef.current
+    globalViewRef.current = next
+    landscapeRef.current = next
+    setGlobalView(next)
+    setLandscape(next)
+    if (next) {
+      previousSatelliteRef.current = satelliteRef.current
+      if (map.getLayer('satellite-imagery')) map.setLayoutProperty('satellite-imagery', 'visibility', 'visible')
+      enterGodsEyeView(map, route, liveTelemetry.current.coordinate)
+      void refreshGlobalContacts()
+      globalRefreshRef.current = window.setInterval(() => void refreshGlobalContacts(), 20_000)
+    } else {
+      if (globalRefreshRef.current !== null) window.clearInterval(globalRefreshRef.current)
+      globalRefreshRef.current = null
+      globalAbortRef.current?.abort()
+      if (map.getLayer('satellite-imagery')) {
+        map.setLayoutProperty('satellite-imagery', 'visibility', previousSatelliteRef.current ? 'visible' : 'none')
+      }
+      leaveGodsEyeView(map, liveTelemetry.current.coordinate, liveTelemetry.current.bearingDeg)
+      setGlobalStatus('Pulsa para ver el entorno desde el aire')
+    }
   }
   // NIVEL B: edificios foto-realistas de Google (necesita clave en .env.local).
   const google3dKey = import.meta.env.VITE_GOOGLE3D_KEY as string | undefined
@@ -136,7 +185,7 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
     })
     mapRef.current = map
     const marker = createVehicleMarker(map, markerNode, liveTelemetry.current.coordinate)
-    const stopAnimation = animateDriveMap(map, marker, closeCar, route, liveTelemetry, (meters) => setAltitude(Math.round(meters)), landscapeRef)
+    const stopAnimation = animateDriveMap(map, marker, closeCar, route, liveTelemetry, (meters) => setAltitude(Math.round(meters)), landscapeRef, globalViewRef)
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     map.on('load', () => {
@@ -227,6 +276,7 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
       map.addLayer({ id: 'demo-route-arrows', type: 'symbol', source: 'route-arrows', layout: { 'symbol-placement': 'point', 'icon-image': 'route-direction-arrow', 'icon-anchor': 'center', 'icon-offset': [0, 0], 'icon-rotate': ['get', 'bearing'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 13, .55, 17.8, .82, 19.5, 1.45, 21, 2], 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map' } })
       map.addSource('route-travelled', { type: 'geojson', data: { ...routeData, geometry: { ...routeData.geometry, coordinates: [routeData.geometry.coordinates[0], routeData.geometry.coordinates[0]] } } })
       map.addLayer({ id: 'route-travelled-line', type: 'line', source: 'route-travelled', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#65beff', 'line-width': routeWidth, 'line-opacity': .72 } })
+      installGodsEyeLayers(map)
       // Los escudos de carretera del estilo base deben quedar sobre el carril azul.
       // El estilo repite CA-34 cada 200 px; damos más espacio para evitar la fila de carteles.
       if (map.getLayer('highway-shield-non-us')) {
@@ -241,6 +291,9 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
     })
     return () => {
       furnitureController.abort()
+      if (globalRefreshRef.current !== null) window.clearInterval(globalRefreshRef.current)
+      globalRefreshRef.current = null
+      globalAbortRef.current?.abort()
       stopAdaptiveQuality()
       stopAnimation()
       photorealRef.current?.destroy()
@@ -251,5 +304,5 @@ export function CockpitMap({ route, telemetry, liveTelemetry, fromLabel, toLabel
     }
   }, [route, liveTelemetry])
 
-  return <div className="cockpit-map-wrap" ref={wrapRef}><div className="cockpit-map" ref={hostRef} /><div className="cockpit-map-label"><span>RUTA DEMO</span><strong>{fromLabel} → {toLabel}</strong><div className="cockpit-map-label__place"><div><span>CALLE ACTUAL</span><b>{telemetry.roadName || 'Vía sin nombre'}</b></div><div><span>LOCALIDAD</span><b>{municipality || 'Localizando…'}</b></div></div><div className="cockpit-map-label__environment"><em>{weather}</em><em>{altitude === null ? 'Altitud…' : `${altitude} m`}</em><em>{quality}</em></div><div className="cockpit-map-toggles"><button className="cockpit-landscape-toggle" type="button" aria-pressed={landscape} onClick={toggleLandscape}>{landscape ? 'Volver al coche' : 'Paisaje 3D'}</button><button className="cockpit-landscape-toggle" type="button" aria-pressed={satellite} onClick={toggleSatellite}>{satellite ? 'Mapa normal' : 'Satélite'}</button><button className="cockpit-landscape-toggle" type="button" aria-pressed={photoreal} onClick={togglePhotoreal} title={google3dKey ? 'Edificios foto-realistas de Google' : 'Necesita tu clave de Google (Nivel B)'}>{photoreal ? '3D normal' : '3D real'}</button></div>{photorealNote ? <em className="cockpit-photoreal-note">{photorealNote}</em> : null}</div><Car3D speed={telemetry.speedKph} /></div>
+  return <div className={`cockpit-map-wrap${globalView ? ' cockpit-map-wrap--global' : ''}`} ref={wrapRef}><div className="cockpit-map" ref={hostRef} /><div className="cockpit-map-label"><span>{globalView ? "GOD'S EYE · EN VIVO" : 'RUTA DEMO'}</span><strong>{fromLabel} → {toLabel}</strong><div className="cockpit-map-label__place"><div><span>CALLE ACTUAL</span><b>{telemetry.roadName || 'Vía sin nombre'}</b></div><div><span>LOCALIDAD</span><b>{municipality || 'Localizando…'}</b></div></div><div className="cockpit-map-label__environment"><em>{weather}</em><em>{altitude === null ? 'Altitud…' : `${altitude} m`}</em><em>{quality}</em></div><div className="cockpit-map-toggles"><button className="cockpit-landscape-toggle cockpit-global-toggle" type="button" aria-pressed={globalView} onClick={toggleGlobalView}>{globalView ? 'Volver a navegación' : 'Vista global'}</button><button className="cockpit-landscape-toggle" type="button" aria-pressed={landscape && !globalView} onClick={toggleLandscape} disabled={globalView}>{landscape && !globalView ? 'Volver al coche' : 'Paisaje 3D'}</button><button className="cockpit-landscape-toggle" type="button" aria-pressed={satellite || globalView} onClick={toggleSatellite} disabled={globalView}>{satellite || globalView ? 'Mapa normal' : 'Satélite'}</button><button className="cockpit-landscape-toggle" type="button" aria-pressed={photoreal} onClick={togglePhotoreal} title={google3dKey ? 'Edificios foto-realistas de Google' : 'Necesita tu clave de Google (Nivel B)'}>{photoreal ? '3D normal' : '3D real'}</button></div>{photorealNote ? <em className="cockpit-photoreal-note">{photorealNote}</em> : null}</div>{globalView ? <aside className="cockpit-global-panel" aria-label="Datos de la vista global"><div><span className="cockpit-live-dot" /><strong>VISTA REGIONAL 3D</strong></div><p>{globalStatus}</p><small>✈ Posiciones ADS-B reales</small><small>⚓ Barcos AIS · necesita clave privada</small><button type="button" onClick={() => void refreshGlobalContacts()}>Actualizar contactos</button></aside> : null}<Car3D speed={telemetry.speedKph} /></div>
 }
